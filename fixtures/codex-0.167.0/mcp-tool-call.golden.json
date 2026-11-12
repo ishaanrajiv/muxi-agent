@@ -1,0 +1,12 @@
+[
+  "thread.started",
+  "turn.started",
+  "tool.started",
+  "approval.requested",
+  "tool.completed",
+  "context.usage",
+  "agent.message.delta ×8",
+  "agent.message.completed",
+  "context.usage",
+  "turn.completed"
+]

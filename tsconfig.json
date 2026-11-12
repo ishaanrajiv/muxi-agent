@@ -1,0 +1,22 @@
+{
+  // Type-checks everything (sources, tests, scripts) without emitting.
+  // `tsconfig.build.json` emits the library into dist/.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    // Tests and scripts run the .ts sources directly under Node type stripping,
+    // so imports name the .ts file; tsc rewrites those to .js on emit.
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

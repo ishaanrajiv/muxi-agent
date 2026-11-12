@@ -1,0 +1,14 @@
+[
+  "thread.started",
+  "turn.started",
+  "agent.plan.updated",
+  "context.usage",
+  "agent.plan.updated",
+  "context.usage",
+  "agent.plan.updated",
+  "context.usage",
+  "agent.message.delta ×36",
+  "agent.message.completed",
+  "context.usage",
+  "turn.completed"
+]

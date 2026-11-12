@@ -1,0 +1,14 @@
+[
+  "thread.started",
+  "turn.started",
+  "agent.message.delta",
+  "agent.message.completed",
+  "context.usage",
+  "turn.completed",
+  "turn 2",
+  "turn.started",
+  "context.compaction",
+  "context.usage",
+  "context.compaction",
+  "turn.completed"
+]

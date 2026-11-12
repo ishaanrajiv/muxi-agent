@@ -1,0 +1,56 @@
+{
+  "name": "@ishaanrajiv/muxi-agent",
+  "version": "0.1.0",
+  "description": "Claude and Codex agent backends behind one provider interface.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ishaanrajiv/muxi-agent.git"
+  },
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.34.9",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/types/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "third_party"
+  ],
+  "codexBindings": {
+    "codexCli": "0.167.0"
+  },
+  "scripts": {
+    "prepare": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs",
+    "generate": "rm -rf src/generated && codex app-server generate-ts --experimental --out src/generated && node scripts/record-codex-version.mjs",
+    "lint": "tsc --noEmit",
+    "test": "node --test --test-concurrency=4 'src/**/*.test.ts'",
+    "smoke": "node scripts/smoke.ts",
+    "live:auto": "node scripts/live-auto-mode.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.319",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2"
+  }
+}
