@@ -1,8 +1,8 @@
 /**
  * Codex's timeout accounting on a thread, paused while a human answers an
  * out-of-band question (`thread/increment_elicitation`; its response's
- * `paused` is "whether timeout accounting is paused"). A question can sit in
- * the UI for minutes, and none of that is the tool's or the turn's time.
+ * `paused` is "whether timeout accounting is paused"). A question can wait on
+ * the host for minutes, and none of that is the tool's or the turn's time.
  */
 
 import type { CodexClient } from "../codex-client.ts";

@@ -52,8 +52,8 @@ const REPORT_MAX = 4_000;
 
 /**
  * A subagent's display name from the short description its provider gave
- * ("Region", "check app version split"). A trailing "subagent" is dropped, since
- * the UI appends it. Empty, it falls back to its place in the turn.
+ * ("Region", "check app version split"). A trailing "subagent" is dropped, so a
+ * caller can append its own. Empty, it falls back to its place in the turn.
  */
 export function subagentName(description: string | null | undefined, ordinal: number): string {
   const words = (description ?? "")

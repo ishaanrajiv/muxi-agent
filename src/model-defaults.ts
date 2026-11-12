@@ -11,8 +11,8 @@
 
 import type { AgentModel } from "./types/index.ts";
 
-/** Effort every default lands on when the model offers it (the picker's own
- *  preference too, so the UI and a headless turn agree). */
+/** Effort every default lands on when the model offers it, so a turn that
+ *  names no effort and a caller showing the model's default agree. */
 const PREFERRED_EFFORT = "medium";
 
 /** Every string a family/version matcher may look at, lowercased. */

@@ -19,7 +19,7 @@ export const CLAUDE_WEB_TOOLS: readonly string[] = [CLAUDE_WEB_SEARCH, CLAUDE_WE
 /** The fields of a Codex `webSearch` item this module reads. */
 export type CodexWebSearchItem = Pick<WebSearchItem, "query" | "action" | "results">;
 
-/** Whether a URL is a web page: the only pages the chat links to. */
+/** Whether a URL is a web page: the only kind of source URL reported. */
 const isWebUrl = (url: unknown): url is string => typeof url === "string" && /^https?:\/\//i.test(url);
 
 const nonEmpty = (values: Array<string | null | undefined>): string[] =>

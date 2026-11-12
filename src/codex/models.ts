@@ -1,5 +1,5 @@
 /**
- * The Codex model catalog: `model/list` rows as picker entries, in picker
+ * The Codex model catalog: `model/list` rows as catalog entries, in display
  * order, and the effort scale each model offers.
  */
 

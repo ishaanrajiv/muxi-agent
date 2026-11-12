@@ -34,7 +34,7 @@ export const ApprovalRequest = z.object({
   kind: ApprovalKind,
   threadId: z.string().nullable(),
   turnId: z.string().nullable(),
-  /** Human-readable summary for a generic approval card. */
+  /** Human-readable one-line summary of what is being approved. */
   summary: z.string(),
   /** Provider-specific params, for rich renderers and policy. */
   detail: z.unknown(),

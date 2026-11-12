@@ -1,7 +1,7 @@
 /**
  * Reading an approval request's detail: the MCP tool call it confirms and that
- * call's arguments. A host's approval policy decides on what these read, and an
- * approval card shows it.
+ * call's arguments. A host's approval policy decides on what these read, and a
+ * host can show the same values to the person deciding.
  *
  * Both providers send an MCP tool-call confirmation in one shape: Codex tags it
  * `_meta.codex_approval_kind: "mcp_tool_call"`, and the Claude bridge copies the

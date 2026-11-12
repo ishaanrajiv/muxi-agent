@@ -75,8 +75,8 @@ import { CodexTurn, type CodexTurnOptions, turnStartParams } from "./codex/turn.
  *
  * A steer is answered inline on the message-send request the user is waiting
  * on, and its only alternatives (queue it, or hand it back) are both cheap — so
- * a slow or wedged app-server must lose the race quickly rather than hold the
- * composer. Five seconds is far above the app-server's normal answer for a call
+ * a slow or wedged app-server must lose the race quickly rather than keep the
+ * caller's `steerTurn` waiting. Five seconds is far above the app-server's normal answer for a call
  * that only appends to the running turn, and far below the 60s default ceiling
  * that fits long-running requests with no one waiting on them.
  */
@@ -113,7 +113,7 @@ export class CodexAgentProvider implements AgentProvider {
   private started = false;
   /**
    * In-flight start, memoized so concurrent callers share one spawn+initialize.
-   * Without this, two near-simultaneous entrypoints (e.g. the model picker's
+   * Without this, two near-simultaneous entrypoints (e.g. a caller's
    * `listModels` racing a thread `boot`) both see `started === false` and each
    * send `initialize` to the same app-server — the second fails with
    * `-32600: Already initialized`.
@@ -285,8 +285,8 @@ export class CodexAgentProvider implements AgentProvider {
    * home), and login.
    *
    * The login half comes from `account/read` over the app-server — the same
-   * credentials a turn authenticates with, carrying the plan and email a Settings
-   * row shows. `codex doctor` only ever answered "is auth configured", by fuzzy
+   * credentials a turn authenticates with, carrying the account's plan and
+   * email. `codex doctor` only ever answered "is auth configured", by fuzzy
    * string match, so it is skipped entirely when the protocol answered and kept
    * as the fallback for a codex too old to have the method.
    */
@@ -456,12 +456,13 @@ export class CodexAgentProvider implements AgentProvider {
   /**
    * List the models Codex's active login/subscription exposes (`model/list`),
    * paging through the cursor. We drop only `hidden` models (the ones the
-   * app-server returns but never surfaces in any picker); removed models simply
+   * app-server returns but Codex itself never offers); removed models simply
    * don't come back from `model/list` at all. Superseded-but-usable models —
    * those carrying a non-null `upgrade` pointer to a successor (e.g. gpt-5.4 →
    * gpt-5.5) — are kept on purpose, so a user can still pin an older model, and
-   * flagged `superseded` so the picker can hide them by default. Normalized to the transport-agnostic {@link AgentModel}; the concrete
-   * catalog is never hardcoded here. Returned in picker order, with the default
+   * flagged `superseded` so a caller can hide them by default. Normalized to the
+   * transport-agnostic {@link AgentModel}; the concrete catalog is never
+   * hardcoded here. Returned in display order, with the default
    * re-pointed at our preference (see {@link pickerModels}).
    */
   async listModels(): Promise<AgentModel[]> {
@@ -476,8 +477,8 @@ export class CodexAgentProvider implements AgentProvider {
     const visible = models.filter((m) => !m.hidden);
     for (const m of visible) {
       const scale = effortScale(m);
-      // Keyed by both handles: a turn's `model` is whichever one the picker row
-      // carried (catalog id or wire slug).
+      // Keyed by both handles: a turn's `model` may be either one (catalog id or
+      // wire slug).
       this.modelEfforts.set(m.id, scale);
       this.modelEfforts.set(m.model, scale);
     }
@@ -785,7 +786,7 @@ export class CodexAgentProvider implements AgentProvider {
     );
 
     const onNotification = (n: ServerNotification) => turn.onNotification(n);
-    // Approvals this turn raised, so its teardown can release the ones the UI
+    // Approvals this turn raised, so its teardown can release the ones the host
     // never answered (see the `finally` below).
     const ownApprovals = new Set<string>();
     const workspaceMode = this.workspaceThreads.has(threadId);
@@ -901,7 +902,7 @@ export class CodexAgentProvider implements AgentProvider {
       this.client.removeListener("approval", onApproval);
       this.client.removeListener("error", onClientError);
       this.client.removeListener("exit", onExit);
-      // Release any approvals the UI never answered (a stopped or failed turn):
+      // Release any approvals the host never answered (a stopped or failed turn):
       // Codex holds the request open until it gets a reply, and our entry would
       // outlive the turn that could still route one. Decline them here.
       for (const id of ownApprovals) {
@@ -936,7 +937,7 @@ export class CodexAgentProvider implements AgentProvider {
 
   /**
    * Forget a pending approval and restart the clock it paused. The one exit for
-   * every way a request ends: answered by the UI ({@link resolveApproval}),
+   * every way a request ends: answered by the host ({@link resolveApproval}),
    * declined at turn teardown, or settled by codex itself
    * (`serverRequest/resolved`). Idempotent: the record goes before the resume
    * is awaited, so two callers racing on one request decrement once.

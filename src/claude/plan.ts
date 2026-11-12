@@ -22,7 +22,7 @@ export interface PlanState {
    *  in-memory: after a provider restart it starts empty while the CLI session
    *  still holds the tasks, and the agent's next `TaskList` resyncs it. A plan
    *  whose every part is completed is dropped at the next turn's start (see
-   *  `sendTurn`) so a finished agenda never bleeds onto a later turn's card. */
+   *  `sendTurn`) so a finished agenda never bleeds into a later turn's plan. */
   plan: Map<string, AgentPlanPart>;
   /** Task id → the {@link plan} key it addresses, for the rare case where the
    *  `TaskCreated` hook and the tool result spell the same task's id differently.
