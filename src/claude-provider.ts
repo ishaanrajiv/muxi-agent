@@ -547,9 +547,9 @@ export class ClaudeAgentProvider implements AgentProvider {
       }
     }
     // A fully settled plan belongs to the turn(s) that ran it. Snapshots are
-    // whole-map and the web fold pins each one to the CURRENT turn, so carrying
-    // finished items forward would paint the previous turn's agenda (and count)
-    // onto this turn's card the moment any plan tool is touched. An UNFINISHED
+    // whole-map and a consumer attributes each one to the CURRENT turn, so
+    // carrying finished items forward would report the previous turn's agenda
+    // (and count) as this turn's the moment any plan tool is touched. An UNFINISHED
     // plan does carry over — the next turn continues it.
     if (state.plan.size > 0 && [...state.plan.values()].every((p) => p.status === "completed")) {
       state.plan = new Map();
@@ -768,7 +768,7 @@ export class ClaudeAgentProvider implements AgentProvider {
       // Only ever retire OUR registration: a queued next turn on this thread may
       // already have replaced it.
       if (this.liveTurns.get(threadId)?.turnId === turnId) this.liveTurns.delete(threadId);
-      // Release any approvals the UI never answered (e.g. an interrupted turn) so
+      // Release any approvals the host never answered (e.g. an interrupted turn) so
       // the SDK callbacks unblock instead of hanging forever.
       for (const [id, p] of this.pending) {
         if (p.turnId === turnId) {

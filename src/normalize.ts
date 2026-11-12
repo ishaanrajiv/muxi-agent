@@ -364,8 +364,8 @@ const INTERRUPTED_MESSAGE = "Stopped on your request; the turn ended where it wa
  * The error event a finished Codex turn implies, or `null` when it finished
  * cleanly. `turn.error` is only populated for a `failed` status. An interrupted
  * turn is reported as a non-fatal `interrupted` warning, with or without a
- * reason: the user's own Stop ends the turn, it isn't a failure, but the web
- * still needs to know the turn was cut short (a queued follow-up waits for it).
+ * reason: the user's own Stop ends the turn, it isn't a failure, but the
+ * caller still needs to know the turn was cut short (a queued follow-up waits for it).
  */
 export function turnStatusEvent(threadId: string, turn: Turn): AgentEvent | null {
   if (turn.status === "failed") {

@@ -28,7 +28,7 @@ import { CLAUDE_WEB_TOOLS } from "../web-search.ts";
 /** The deny message when a decline carries no reason of its own. */
 const DEFAULT_DENY_MESSAGE = "Denied by the approval policy";
 
-/** A parked tool-permission request awaiting a UI decision; `settle` resolves the
+/** A parked tool-permission request awaiting the host's decision; `settle` resolves the
  *  SDK `canUseTool` callback. */
 export interface PendingApproval {
   turnId: string;

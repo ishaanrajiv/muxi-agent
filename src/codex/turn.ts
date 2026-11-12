@@ -189,7 +189,8 @@ export class CodexTurn {
   /**
    * If the app-server process dies mid-turn (killed externally, panicked), the
    * client emits `exit` — NOT `error` — and no further notifications arrive.
-   * Without this the turn would await forever and the UI stays stuck "running".
+   * Without this the turn's stream would never end and the caller would wait
+   * on a turn that can't finish.
    * End the turn with a clear failure so the orchestrator records `error.raised`
    * and the conversation returns to idle. `stderrTail` is the process's last
    * words.
@@ -293,7 +294,7 @@ export function turnStartParams(start: TurnStart): TurnStartParams {
   // Unlike an omitted value, null actively returns a sticky Codex thread
   // from a faster tier to Standard.
   if (input.serviceTier !== undefined) params.serviceTier = input.serviceTier;
-  // The UI needs short work labels, not the most detailed available trace.
+  // Callers get short work labels, not the most detailed available trace.
   // `concise` keeps reasoning quality unchanged while reducing summary text;
   // the provider normalizer turns the returned entries into typed rows.
   params.summary = options.summary ?? "concise";

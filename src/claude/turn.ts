@@ -124,8 +124,8 @@ export function consumedPrompts(
 }
 
 /** The image subtypes the Anthropic API accepts as base64 content blocks. An
- *  `ImageAttachment.dataUrl` may carry any `image/*` subtype (the composer only
- *  checks the `image/` prefix), so anything outside this set is dropped rather
+ *  `ImageAttachment.dataUrl` may carry any `image/*` subtype (a caller may only
+ *  check the `image/` prefix), so anything outside this set is dropped rather
  *  than sent — the API would reject the whole message otherwise. */
 const CLAUDE_IMAGE_MEDIA_TYPES: ReadonlySet<string> = new Set([
   "image/jpeg",

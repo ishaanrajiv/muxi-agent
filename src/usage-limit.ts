@@ -1,8 +1,9 @@
 /**
  * The one sentence a usage-limit stop puts on the turn, shared by both
  * backends: which window ran out and when it resets. Written here rather than
- * in the web because only the provider knows the window, and the server runs on
- * the reader's own machine, so its clock and time zone are theirs.
+ * left to the caller because only the provider knows the window, and the
+ * library runs on the reader's own machine, so its clock and time zone are
+ * theirs.
  */
 
 /** The window that ran out, as the provider knows it. */

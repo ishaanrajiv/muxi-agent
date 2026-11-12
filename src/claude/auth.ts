@@ -39,8 +39,8 @@ type Exec = (
  * turns ran fine.
  *
  * Auth is read from a live CLI session's initialization result — the SDK's own
- * account view, which carries the subscription label and email a Settings row
- * shows and is the same channel a turn authenticates through. An account the
+ * account view, which carries the subscription label and email and is the same
+ * channel a turn authenticates through. An account the
  * CLI can't describe falls back to `claude auth status --json`, whose envelope
  * is the only source that says "signed out" definitively. Neither answering is
  * `unknown`, never "signed out": a probe that didn't answer is no evidence.

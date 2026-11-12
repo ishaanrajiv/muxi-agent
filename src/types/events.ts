@@ -218,7 +218,7 @@ export const ApprovalRequested = z.object({
 /**
  * Provider-neutral error classes. Each backend maps its own error kinds onto these
  * (Codex `unauthorized` → `not_logged_in`, a spawn ENOENT → `binary_missing`), so
- * a UI can author one sentence per class.
+ * a caller can write one message per class.
  */
 export const ERROR_CODES = [
   "binary_missing",

@@ -3,7 +3,7 @@
  *
  * Providers return very different reasoning-summary shapes: Codex commonly
  * emits markdown headings, while Claude can emit paragraphs of prose. This
- * module normalizes both into small disclosure rows so the UI never has to
+ * module normalizes both into small summary rows so a consumer never has to
  * infer a provider from formatting. Raw reasoning is deliberately not modeled;
  * these are summaries suitable for display.
  */

@@ -102,7 +102,7 @@ async function openSession(opts: CodexAccountOptions): Promise<CodexClient> {
 
 /**
  * The login behind the given Codex home, as the app-server sees it — the same
- * credentials a turn would use, with the plan and email a Settings row shows.
+ * credentials a turn would use, with the account's plan and email.
  *
  * `null` means the protocol couldn't answer (no binary, no `app-server`, no
  * `account/read`, a timeout) and the caller should fall back to its own check.

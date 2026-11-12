@@ -18,7 +18,7 @@ const NETWORK_RE =
 
 /**
  * Map a terminal Claude failure sentence onto a canonical `error.raised` code, so
- * the UI can offer the right remedy (sign in / retry) instead of raw prose.
+ * a caller can offer the right remedy (sign in / retry) instead of raw prose.
  * Anything we can't place stays the honest generic `turn_failed`.
  */
 export function classifyClaudeFailure(

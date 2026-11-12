@@ -3,7 +3,7 @@
  * have a native search tool: Claude's `WebSearch` and Codex's `web_search`.
  * Each provider reports a search as a `tool.started` / `tool.completed` pair on
  * the `builtin` server under one tool name, {@link WEB_SEARCH_TOOL}, with the
- * arguments and result in the shapes below, so a UI draws one row for both.
+ * arguments and result in the shapes below, so a consumer handles both alike.
  */
 
 import { z } from "zod";

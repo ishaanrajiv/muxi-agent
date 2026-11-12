@@ -119,7 +119,7 @@ const CONTENT_EVENTS: ReadonlySet<string> = new Set([
  * What a turn has produced so far, which settles the case both backends leave
  * ambiguous: retries exhausted, the turn closed as a success, and nothing in
  * it but the warnings raised on the way. That is not a success, and closing it
- * as one leaves the chat showing warnings and no outcome at all.
+ * as one leaves the caller with warnings and no outcome at all.
  */
 export class TurnOutput {
   private sawContent = false;

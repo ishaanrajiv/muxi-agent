@@ -263,8 +263,8 @@ export async function pumpTurn(pump: TurnPump): Promise<void> {
         // `mapMessage` has judged it, or it could be pushed onto a turn that
         // is about to close.
         live.accepting = false;
-        // Emit context fill BEFORE mapMessage pushes `turn.completed`, so the
-        // UI updates the pill as the turn settles. Prefer the SDK's
+        // Emit context fill BEFORE mapMessage pushes `turn.completed`, so a
+        // consumer has the final `context.usage` when the turn settles. Prefer the SDK's
         // `getContextUsage()` (the data behind `/context`): it gives the
         // authoritative total + window AND a per-category breakdown. It's a
         // live control call on the still-open session, so we bound it with a

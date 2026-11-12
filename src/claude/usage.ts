@@ -102,10 +102,10 @@ interface StructuredUsage {
 
 /**
  * Map the SDK's structured usage response onto {@link ProviderUsage}, the same
- * object the `/usage` scrape produces, so the chip and popover render it
- * unchanged. Labels match the scrape's ("Session", "Week", "Week · Sonnet") and
- * the Fable-only weekly bucket is dropped for the same reason it is there: it
- * tracks a model this product never routes to.
+ * object the `/usage` scrape produces, so a caller handles both sources the
+ * same way. Labels match the scrape's ("Session", "Week", "Week · Sonnet"), and
+ * the Fable-only weekly bucket is dropped here as it is there: the windows
+ * returned are the session, the all-models week and the other per-model weeks.
  *
  * `scope` is `account` here, not the scrape's `machine`: these figures come from
  * the claude.ai usage endpoint rather than this device's session log, which is
@@ -126,7 +126,7 @@ export function structuredClaudeUsage(res: unknown, providerId: string): Provide
     windows.push({
       label,
       usedPercent: Math.round(w.utilization),
-      // A machine timestamp at last: the UI formats it, so no label is needed.
+      // A machine timestamp at last: callers format it, so no label is needed.
       resetsAt: typeof w.resets_at === "string" && w.resets_at ? w.resets_at : null,
       resetsLabel: null,
       windowMins,
@@ -172,8 +172,8 @@ export function parseClaudeUsage(text: string, providerId: string): ProviderUsag
   for (const line of text.split("\n")) {
     const m = line.match(/^\s*(Current [^:]+):\s*(\d+)%\s*used\b(?:\s*·\s*resets\s+(.+?))?\s*$/i);
     if (!m) continue;
-    // The CLI prints a Fable-only weekly bucket alongside the all-models one; it
-    // tracks a model this product never routes to, so it is noise in the chip.
+    // The CLI prints a Fable-only weekly bucket alongside the all-models one. It
+    // is left out, matching the structured path (structuredClaudeUsage).
     if (/^current\s+week\s*\(\s*fable[^)]*\)$/i.test(m[1].trim())) continue;
     const rawResets = m[3]?.trim() || null;
     const tzMatch = rawResets?.match(/^(.*?)\s*\(([^)]+)\)$/) ?? null;
@@ -185,9 +185,9 @@ export function parseClaudeUsage(text: string, providerId: string): ProviderUsag
       usedPercent: Number(m[2]),
       resetsAt: resets && resetsTz ? resetLabelToIso(resets, resetsTz) : null,
       resetsLabel: resets,
-      // Claude's `/usage` gives no duration; infer it from the window kind so the UI
-      // formats resets like Codex's: the session bucket is a 5-hour window, the
-      // weekly buckets are 7-day windows.
+      // Claude's `/usage` gives no duration; infer it from the window kind so a
+      // caller can treat resets like Codex's: the session bucket is a 5-hour
+      // window, the weekly buckets are 7-day windows.
       windowMins: /^session/i.test(label) ? 300 : /week/i.test(label) ? 10080 : null,
     });
   }
@@ -207,11 +207,11 @@ const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "
 /**
  * Convert a `/usage` reset label like "Jun 18 at 6:19pm" plus the IANA zone the
  * CLI printed it in (the trailing `(Asia/Calcutta)` etc.) to an ISO instant, so
- * the UI can format Claude's resets exactly like Codex's (which already ships a
+ * `resetsAt` means the same for Claude as for Codex (which already ships a
  * timestamp). The label omits the year; we assume the zone's current year and
  * roll forward a year if that lands in the past (resets are always upcoming).
  * Returns null if the shape doesn't match or the zone is unknown to Intl,
- * leaving `resetsLabel` as the UI's fallback.
+ * leaving `resetsLabel` (the CLI's own text) as the caller's fallback.
  */
 function resetLabelToIso(label: string, timeZone: string): string | null {
   const m = label.match(/^([A-Za-z]{3,})\.?\s+(\d{1,2})\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
