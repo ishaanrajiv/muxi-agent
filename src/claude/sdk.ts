@@ -24,6 +24,38 @@ export const SANDBOX_OFF = { enabled: false } as const;
 /** Isolation: the flag-settings layer every session gets (see the
  *  `claude-provider.ts` header). */
 export const ISOLATED_SETTINGS = { autoMemoryEnabled: false };
+/** The CLI's environment variable for the auto-compact window. It outranks the
+ *  `autoCompactWindow` setting, so a session given the setting runs without it. */
+export const AUTO_COMPACT_WINDOW_ENV = "CLAUDE_CODE_AUTO_COMPACT_WINDOW";
+/** The auto-compact windows the CLI accepts, in tokens. */
+export const AUTO_COMPACT_WINDOW_MIN = 100_000;
+export const AUTO_COMPACT_WINDOW_MAX = 1_000_000;
+
+/**
+ * A provider's `autoCompactWindow`, checked: a whole number of tokens the CLI
+ * accepts. Outside its range the CLI would clamp it quietly, so it fails here.
+ */
+export function checkAutoCompactWindow(tokens: number | undefined): number | undefined {
+  if (tokens === undefined) return undefined;
+  if (!Number.isInteger(tokens) || tokens < AUTO_COMPACT_WINDOW_MIN || tokens > AUTO_COMPACT_WINDOW_MAX) {
+    throw new RangeError(
+      `autoCompactWindow must be a whole number of tokens from ${AUTO_COMPACT_WINDOW_MIN} to ${AUTO_COMPACT_WINDOW_MAX}, got ${tokens}`,
+    );
+  }
+  return tokens;
+}
+
+/**
+ * A chat turn's options with its auto-compact window: the setting joins the
+ * isolated flag settings, and the CLI's env loses {@link AUTO_COMPACT_WINDOW_ENV},
+ * which would otherwise win over it (a host started from a shell that sets it).
+ * Without a window, the options are unchanged and the CLI keeps its own default.
+ */
+export function withAutoCompactWindow(options: Options, tokens: number | undefined): Options {
+  if (tokens === undefined) return options;
+  const { [AUTO_COMPACT_WINDOW_ENV]: _dropped, ...env } = options.env ?? process.env;
+  return { ...options, settings: { ...ISOLATED_SETTINGS, autoCompactWindow: tokens }, env };
+}
 /** Same switch for the `claude -p` shell-outs (probe/getUsage). */
 export const SANDBOX_OFF_SETTINGS_ARGS = ["--settings", '{"sandbox":{"enabled":false}}'] as const;
 

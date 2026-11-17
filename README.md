@@ -366,6 +366,7 @@ interface WorkspaceSettings {
 | `subagent` | none | the subagent role (`SubagentRole`) |
 | `streamedInputTools` | none | tool names whose input streams as `tool.input.delta` |
 | `guard` | none | the host's hard refusals for every tool call (`ToolGuard`, above) |
+| `autoCompactWindow` | the model's whole window | the context window, in tokens (100,000 to 1,000,000), a chat session is compacted within. The CLI compacts a little short of it (about 33k tokens on CLI 0.3.x), so `133_000` compacts near 100k. It wins over `CLAUDE_CODE_AUTO_COMPACT_WINDOW` in the host's env |
 | `queryFn` | SDK `query` | a test seam |
 
 `new CodexAgentProvider(options)`:

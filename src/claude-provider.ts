@@ -103,6 +103,7 @@ import {
 import { guardHooks, mergeHooks } from "./claude/hooks.ts";
 import { PLAN_RESYNC_HINT, planHooks } from "./claude/plan.ts";
 import {
+  checkAutoCompactWindow,
   executableOption,
   ISOLATED_SETTINGS,
   loadSdk,
@@ -154,6 +155,12 @@ export interface ClaudeAgentProviderOptions {
   streamedInputTools?: Iterable<string>;
   /** The host's hard refusals for every tool call ({@link ToolGuard}). */
   guard?: ToolGuard;
+  /** The context window, in tokens, the CLI compacts a chat session within (its
+   *  `autoCompactWindow` setting): it compacts a little short of it, about 33k
+   *  tokens on CLI 0.3.x, so 133_000 compacts near 100k. 100_000 to 1_000_000;
+   *  anything else throws. Absent, the CLI's default (the model's whole window).
+   *  Set, it wins over `CLAUDE_CODE_AUTO_COMPACT_WINDOW` in the host's env. */
+  autoCompactWindow?: number;
 }
 
 export class ClaudeAgentProvider implements AgentProvider {
@@ -165,6 +172,7 @@ export class ClaudeAgentProvider implements AgentProvider {
   private readonly subagentRole: SubagentRole | undefined;
   private readonly streamedInputTools: ReadonlySet<string>;
   private readonly guard: ToolGuard | undefined;
+  private readonly autoCompactWindow: number | undefined;
   /** An explicit `claude` path from the caller, if any. Everything else is
    *  resolved per-call by `resolveClaudeExecutable`. */
   private readonly configuredPath: string | undefined;
@@ -204,6 +212,7 @@ export class ClaudeAgentProvider implements AgentProvider {
     this.subagentRole = opts.subagent ? checkSubagentRole(opts.subagent) : undefined;
     this.streamedInputTools = new Set(opts.streamedInputTools ?? []);
     this.guard = opts.guard;
+    this.autoCompactWindow = checkAutoCompactWindow(opts.autoCompactWindow);
     this.configuredPath = opts.pathToClaudeCodeExecutable;
     this.queryFn = opts.queryFn;
     this.sessionCheck = opts.sessionCheck ?? { state: sessionState, clear: clearEmptySession };
@@ -642,6 +651,7 @@ export class ClaudeAgentProvider implements AgentProvider {
       controller,
       executablePath: this.executablePath,
       supportsSteer: this.supportsSteer,
+      ...(this.autoCompactWindow !== undefined ? { autoCompactWindow: this.autoCompactWindow } : {}),
       mcpServers: turnMcpServers(servers),
       redactor,
       canUseTool: async (toolName, toolInput, opts) => {

@@ -21,7 +21,7 @@ import type { SubagentRole } from "../subagents.ts";
 import { SUBAGENT_TOOL, subagentTurnOptions } from "./subagents.ts";
 import type { PlanState } from "./plan.ts";
 import { workspaceEnv, workspaceSandbox, workspaceToolNames, type WorkspaceState } from "./workspace.ts";
-import { executableOption, ISOLATED_SETTINGS, SANDBOX_OFF } from "./sdk.ts";
+import { executableOption, ISOLATED_SETTINGS, SANDBOX_OFF, withAutoCompactWindow } from "./sdk.ts";
 import { ASK_USER, BUILTIN_TOOL_NAMES, CLAUDE_TOOL_NAME_NOTE } from "./tools.ts";
 import { closeTurnInput } from "./turn.ts";
 import { CLAUDE_WEB_TOOLS } from "../web-search.ts";
@@ -93,11 +93,18 @@ export interface ChatTurnSetup {
   outputSchema?: Record<string, unknown>;
   /** The turn's permission mode (TurnInput.permissionMode); "default" when absent. */
   permissionMode?: "default" | "auto";
+  /** The context window the CLI compacts the session within, in tokens (the
+   *  provider's `autoCompactWindow`); the CLI's own default when absent. */
+  autoCompactWindow?: number;
 }
 
 /** The SDK options of one chat turn. */
 export function chatTurnOptions(setup: ChatTurnSetup): Options {
   const { state } = setup;
+  return withAutoCompactWindow(chatTurnBaseOptions(setup, state), setup.autoCompactWindow);
+}
+
+function chatTurnBaseOptions(setup: ChatTurnSetup, state: ThreadState): Options {
   return {
     model: setup.model,
     ...(setup.effort ? { effort: setup.effort } : {}),
