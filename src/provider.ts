@@ -80,6 +80,9 @@ export interface ResumeThreadState {
   subagents?: boolean | null;
   /** Whether the thread may ask the person questions (Claude's AskUserQuestion). */
   askUser?: boolean | null;
+  /** The thread's own auto-compact window (Claude; see `StartThreadInput`).
+   *  A number sets it, and takes effect on the thread's next turn. */
+  autoCompactWindow?: number | null;
 }
 
 /**

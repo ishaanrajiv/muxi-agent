@@ -159,7 +159,8 @@ export interface ClaudeAgentProviderOptions {
    *  `autoCompactWindow` setting): it compacts a little short of it, about 33k
    *  tokens on CLI 0.3.x, so 133_000 compacts near 100k. 100_000 to 1_000_000;
    *  anything else throws. Absent, the CLI's default (the model's whole window).
-   *  Set, it wins over `CLAUDE_CODE_AUTO_COMPACT_WINDOW` in the host's env. */
+   *  Set, it wins over `CLAUDE_CODE_AUTO_COMPACT_WINDOW` in the host's env. A
+   *  thread started or resumed with its own `autoCompactWindow` uses that. */
   autoCompactWindow?: number;
 }
 
@@ -359,6 +360,7 @@ export class ClaudeAgentProvider implements AgentProvider {
   }
 
   async startThread(input: StartThreadInput): Promise<Thread> {
+    const window = checkAutoCompactWindow(input.autoCompactWindow);
     const threadId = randomUUID();
     const systemPrompt = composeSystemPrompt(
       input.baseInstructions,
@@ -376,6 +378,7 @@ export class ClaudeAgentProvider implements AgentProvider {
       ...(input.webSearch ? { webSearch: true } : {}),
       ...(input.subagents ? { subagents: true } : {}),
       ...(input.askUser ? { askUser: true } : {}),
+      ...(window !== undefined ? { autoCompactWindow: window } : {}),
     });
     return this.threadOf(threadId);
   }
@@ -398,7 +401,10 @@ export class ClaudeAgentProvider implements AgentProvider {
    * still live in this process) or the provider default.
    */
   async resumeThread(threadId: string, persisted?: ResumeThreadState): Promise<Thread> {
+    // Checked before anything is adopted: a refused window leaves the thread as it was.
+    const window = checkAutoCompactWindow(persisted?.autoCompactWindow ?? undefined);
     const state = this.ensureThreadState(threadId);
+    if (window !== undefined) state.autoCompactWindow = window;
     if (persisted?.providerSessionId) state.sessionAlias = persisted.providerSessionId;
     if (persisted?.systemPrompt) state.systemPrompt = persisted.systemPrompt;
     if (persisted?.effort) state.effort = persisted.effort;
@@ -521,6 +527,7 @@ export class ClaudeAgentProvider implements AgentProvider {
       ...(src?.webSearch ? { webSearch: true } : {}),
       ...(src?.subagents ? { subagents: true } : {}),
       ...(src?.askUser ? { askUser: true } : {}),
+      ...(src?.autoCompactWindow !== undefined ? { autoCompactWindow: src.autoCompactWindow } : {}),
     });
     return { id: sessionId, cwd, status: "idle", model: src?.model ?? this.defaultModel, provider: this.id };
   }
@@ -640,6 +647,8 @@ export class ClaudeAgentProvider implements AgentProvider {
     // The refusals the host's side made, by tool_use_id: the guard and the host's canUseTool. The
     // CLI's own (the classifier, a rule, the mode) are read in mapMessage.
     const denials = new Map<string, ToolDenial>();
+    // The thread's own window wins over the provider's.
+    const autoCompactWindow = state.autoCompactWindow ?? this.autoCompactWindow;
     const bridge: ApprovalBridge = { pending: this.pending, threadId, turnId, push, denials, ...(this.guard ? { guard: this.guard } : {}) };
     const options = chatTurnOptions({
       state,
@@ -651,7 +660,7 @@ export class ClaudeAgentProvider implements AgentProvider {
       controller,
       executablePath: this.executablePath,
       supportsSteer: this.supportsSteer,
-      ...(this.autoCompactWindow !== undefined ? { autoCompactWindow: this.autoCompactWindow } : {}),
+      ...(autoCompactWindow !== undefined ? { autoCompactWindow } : {}),
       mcpServers: turnMcpServers(servers),
       redactor,
       canUseTool: async (toolName, toolInput, opts) => {
