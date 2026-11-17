@@ -108,7 +108,7 @@ process.stdin.on("data", (chunk) => {
     if (msg.method === "initialize") {
       for (const n of bootNotifs) process.stdout.write(JSON.stringify(n) + "\\n");
     }
-    if (msg.method === "turn/start") {
+    if (msg.method === "turn/start" || msg.method === "thread/compact/start") {
       for (const n of notifs) process.stdout.write(JSON.stringify(n) + "\\n");
     }
   }
@@ -154,6 +154,45 @@ const delta = {
 const completed = (turn: Record<string, unknown>) => ({
   method: "turn/completed",
   params: { threadId: "t1", turn: { id: "turn1", ...turn } },
+});
+
+test("compactThread asks for a compaction and streams it as a turn", async () => {
+  const log = join(mkdtempSync(join(tmpdir(), "muxi-agent-codex-compact-")), "methods");
+  const item = { type: "contextCompaction", id: "c1" };
+  const provider = new CodexAgentProvider({
+    ...testCodexHome(),
+    codexBin: FAKE_SERVER,
+    env: {
+      FAKE_METHOD_LOG: log,
+      FAKE_NOTIFS: JSON.stringify([
+        started,
+        { method: "item/started", params: { threadId: "t1", turnId: "turn1", item } },
+        { method: "item/completed", params: { threadId: "t1", turnId: "turn1", item } },
+        completed({ status: "completed" }),
+      ]),
+    },
+    turnTimeoutMs: 10_000,
+  });
+  try {
+    const thread = await provider.startThread({ cwd: process.cwd() });
+    await assert.rejects(async () => {
+      for await (const _ of provider.compactThread(thread.id, { instructions: "keep names" })) void _;
+    }, /take no instructions/);
+    const events: AgentEvent[] = [];
+    for await (const ev of provider.compactThread(thread.id)) events.push(ev);
+    const methods = readFileSync(log, "utf8").split("\n");
+    assert.equal(methods.includes("thread/compact/start"), true);
+    assert.equal(methods.includes("turn/start"), false, "a compaction sends no input");
+    const first = events.find((e) => e.type === "turn.started");
+    assert.deepEqual(first && "trigger" in first ? first.trigger : null, { kind: "compact" });
+    assert.deepEqual(
+      events.flatMap((e) => (e.type === "context.compaction" ? [[e.phase, e.trigger]] : [])),
+      [["started", "manual"], ["completed", "manual"]],
+    );
+    assert.equal(events.at(-1)?.type, "turn.completed");
+  } finally {
+    await provider.stop();
+  }
 });
 
 test("thread model comes from the response model, not modelProvider", async () => {

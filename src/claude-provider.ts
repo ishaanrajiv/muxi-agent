@@ -76,6 +76,7 @@ import type { EffortLevel, query, SDKUserMessage } from "@anthropic-ai/claude-ag
 import type {
   AgentProvider,
   ApprovalRequestId,
+  CompactThreadOptions,
   HistoryCut,
   ResumeThreadState,
   RollbackResult,
@@ -84,7 +85,7 @@ import type {
   UtilityTurnResult,
   WorkspaceSettings,
 } from "./provider.ts";
-import { composeSystemPrompt, InvalidRollbackError } from "./provider.ts";
+import { COMPACT_TRIGGER, composeSystemPrompt, InvalidRollbackError } from "./provider.ts";
 import { PendingApprovalNotFoundError, TurnOutput, TurnQueue, userPrompt } from "./shared.ts";
 import { checkSubagentRole, SUBAGENT_TURN_ENDED, SubagentTracker, type SubagentRole } from "./subagents.ts";
 import { probeClaude } from "./claude/auth.ts";
@@ -548,7 +549,25 @@ export class ClaudeAgentProvider implements AgentProvider {
     return sessionId;
   }
 
-  async *sendTurn(threadId: string, input: TurnInput): AsyncIterable<TurnStreamEvent> {
+  sendTurn(threadId: string, input: TurnInput): AsyncIterable<TurnStreamEvent> {
+    return this.runTurn(threadId, input);
+  }
+
+  /**
+   * Compact the thread now, as a turn of its own: the CLI's `/compact` command, which takes the
+   * instructions as its argument. The command has to be the whole prompt, so this turn carries
+   * neither the workspace steering nor the plan resync; both wait for the next real turn.
+   */
+  compactThread(threadId: string, opts: CompactThreadOptions = {}): AsyncIterable<TurnStreamEvent> {
+    const instructions = opts.instructions?.trim();
+    return this.runTurn(
+      threadId,
+      { text: instructions ? `/compact ${instructions}` : "/compact", trigger: COMPACT_TRIGGER },
+      true,
+    );
+  }
+
+  private async *runTurn(threadId: string, input: TurnInput, compact = false): AsyncIterable<TurnStreamEvent> {
     const state = this.ensureThreadState(threadId);
     // A cold thread resumes its saved session, unless the CLI never saved one: killed early in the
     // thread's first turn, it left no file, or a file with no conversation in it. Resuming that
@@ -567,6 +586,9 @@ export class ClaudeAgentProvider implements AgentProvider {
     // carrying finished items forward would report the previous turn's agenda
     // (and count) as this turn's the moment any plan tool is touched. An UNFINISHED
     // plan does carry over — the next turn continues it.
+    // A thread with no saved conversation has nothing to compact, and the command would open its
+    // session with a turn that is not the caller's.
+    if (compact && state.fresh) throw new Error(`Thread ${threadId} has no conversation to compact yet.`);
     if (state.plan.size > 0 && [...state.plan.values()].every((p) => p.status === "completed")) {
       state.plan = new Map();
     }
@@ -574,7 +596,7 @@ export class ClaudeAgentProvider implements AgentProvider {
     // The workspace steering this turn carries. A turn already running when
     // workspace mode switched on carries none, so its completion must not
     // consume it.
-    const workspaceContext = state.workspace?.pendingContext;
+    const workspaceContext = compact ? undefined : state.workspace?.pendingContext;
 
     // ── event plumbing: a background SDK loop fills this queue; we yield from it.
     const turn = new TurnQueue<TurnStreamEvent>();
@@ -648,10 +670,10 @@ export class ClaudeAgentProvider implements AgentProvider {
     // `TaskList` so the plan snapshots resume from the CLI's own task store. The
     // ask rides on this turn's user message because the system prompt is recorded
     // for the whole conversation and would drop it (see `chatTurnOptions`).
-    const promptText = [state.planResync ? PLAN_RESYNC_HINT : "", workspaceContext ?? "", input.text]
-      .filter(Boolean)
-      .join("\n\n");
-    state.planResync = false;
+    const promptText = compact
+      ? input.text
+      : [state.planResync ? PLAN_RESYNC_HINT : "", workspaceContext ?? "", input.text].filter(Boolean).join("\n\n");
+    if (!compact) state.planResync = false;
 
     // The refusals the host's side made, by tool_use_id: the guard and the host's canUseTool. The
     // CLI's own (the classifier, a rule, the mode) are read in mapMessage.
@@ -770,7 +792,8 @@ export class ClaudeAgentProvider implements AgentProvider {
       threadId,
       turnId,
       provider: "claude",
-      prompt: userPrompt(input),
+      // A compaction has no prompt of the caller's to show; its trigger says what the turn is.
+      ...(compact ? {} : { prompt: userPrompt(input) }),
       model,
       ...(effort ? { effort } : {}),
       ...(input.trigger ? { trigger: input.trigger } : {}),

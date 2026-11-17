@@ -18,7 +18,7 @@ export type {
   ToolGuard,
   ToolGuardCall,
 } from "./provider.ts";
-export { composeSystemPrompt, InvalidRollbackError } from "./provider.ts";
+export { COMPACT_TRIGGER, composeSystemPrompt, InvalidRollbackError } from "./provider.ts";
 export { PendingApprovalNotFoundError } from "./shared.ts";
 export type { SubagentRole } from "./subagents.ts";
 

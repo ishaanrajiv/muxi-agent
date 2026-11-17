@@ -46,6 +46,9 @@ export interface CodexTurnOptions {
   /** What this turn's own `turn.started` carries besides its ids: the prompt,
    *  the selection and the caller's trigger. Codex's notification has none. */
   started?: Partial<Omit<Extract<AgentEvent, { type: "turn.started" }>, "type" | "threadId" | "turnId">>;
+  /** The turn is a compaction the caller asked for: it starts with
+   *  `thread/compact/start`, sends no input, and its compaction reads `manual`. */
+  compact?: boolean;
 }
 
 /**

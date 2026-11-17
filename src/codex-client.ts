@@ -203,6 +203,12 @@ export class CodexClient extends EventEmitter {
     return this.request("turn/start", params);
   }
 
+  /** Compact a thread now. The compaction runs as a turn of its own, announced
+   *  by `turn/started`; this resolves once the app-server has accepted it. */
+  async threadCompactStart(threadId: string): Promise<unknown> {
+    return this.request("thread/compact/start", { threadId });
+  }
+
   /** Fold a user message into the turn already running (`expectedTurnId` is the
    *  app-server's precondition on which turn it may land in). `timeoutMs` bounds
    *  the round trip — a steer is answered inline on an HTTP request, so its

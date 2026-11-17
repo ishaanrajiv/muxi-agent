@@ -341,8 +341,8 @@ export const NOTICE_CODES: ReadonlySet<string> = new Set(["model_rerouted", "dep
 
 /**
  * A compaction item's start or end. The item carries no token counts, so the
- * provider fills `preTokens` from the thread's last usage. Codex only compacts
- * on its own today (the provider never asks), so the trigger is always auto. The
+ * provider fills `preTokens` from the thread's last usage. The item doesn't say
+ * who asked, so it reads auto here and the provider restates one it asked for. The
  * deprecated `thread/compacted` notification is left unmapped; 0.156.1 no
  * longer sends it.
  */
