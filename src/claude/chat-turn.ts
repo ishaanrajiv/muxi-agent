@@ -5,7 +5,7 @@
  * SDK's messages into the turn's event queue.
  */
 
-import type { McpServerConfig, TurnStreamEvent } from "../types/index.ts";
+import type { McpServerConfig, TurnStreamEvent, TurnUsage } from "../types/index.ts";
 import type {
   EffortLevel,
   McpServerConfig as SdkMcpServerConfig,
@@ -60,6 +60,9 @@ export interface ThreadState extends PlanState {
   askUser?: boolean;
   /** Set once the thread is in workspace mode (see {@link WorkspaceState}). */
   workspace?: WorkspaceState;
+  /** The running token count of the session `sessionId`, from the thread's last
+   *  result: what its next turn's usage is measured from. */
+  usageTotals?: { sessionId: string; totals: TurnUsage };
   /** The model's context window, from the last turn's `result`. Only a result
    *  reports it, so a turn reports its fill as it runs only once it is known. */
   contextWindow?: number | null;

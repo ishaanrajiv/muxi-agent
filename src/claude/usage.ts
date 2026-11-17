@@ -4,7 +4,7 @@
  * scraped from `claude -p "/usage"`.
  */
 
-import type { ProviderUsage, UsageWindow } from "../types/index.ts";
+import type { ProviderUsage, TurnUsage, UsageWindow } from "../types/index.ts";
 
 import { resolveClaudeExecutable } from "../claude-binary.ts";
 import { capitalize, loadExecFile } from "../shared.ts";
@@ -29,6 +29,102 @@ export function pickContextWindow(
   }
   const max = Math.max(...entries.map(([, v]) => v.contextWindow ?? 0));
   return max > 0 ? max : null;
+}
+
+/** The token counts a `result` message carries. Structural: the SDK's own
+ *  types mark most of this optional or leave it out of older CLIs. */
+interface ResultUsage {
+  modelUsage?: Record<
+    string,
+    {
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadInputTokens?: number;
+      cacheCreationInputTokens?: number;
+      thinkingTokens?: number;
+    }
+  >;
+  usage?: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+  } | null;
+}
+
+/** The session's running count: every model's `modelUsage`, summed. Null when
+ *  no entry carries a count (an older CLI sends a context window alone). */
+function sessionTotals(r: ResultUsage): TurnUsage | null {
+  const models = Object.values(r.modelUsage ?? {}).filter((m) => m.inputTokens != null || m.outputTokens != null);
+  if (models.length === 0) return null;
+  let uncached = 0, read = 0, written = 0, output = 0, thinking = 0;
+  let sawThinking = false;
+  for (const m of models) {
+    uncached += m.inputTokens ?? 0;
+    read += m.cacheReadInputTokens ?? 0;
+    written += m.cacheCreationInputTokens ?? 0;
+    output += m.outputTokens ?? 0;
+    if (m.thinkingTokens != null) {
+      sawThinking = true;
+      thinking += m.thinkingTokens;
+    }
+  }
+  return {
+    inputTokens: uncached + read + written,
+    cachedInputTokens: read,
+    cacheWriteInputTokens: written,
+    outputTokens: output,
+    ...(sawThinking ? { reasoningOutputTokens: thinking } : {}),
+  };
+}
+
+/** The main loop's own requests this turn (`usage`), or null without a count. */
+function mainLoopUsage(r: ResultUsage): TurnUsage | null {
+  const u = r.usage;
+  if (!u || (u.input_tokens == null && u.output_tokens == null)) return null;
+  const read = u.cache_read_input_tokens ?? 0;
+  const written = u.cache_creation_input_tokens ?? 0;
+  return {
+    inputTokens: (u.input_tokens ?? 0) + read + written,
+    cachedInputTokens: read,
+    cacheWriteInputTokens: written,
+    outputTokens: u.output_tokens ?? 0,
+  };
+}
+
+/** A session that has used nothing yet: the baseline of a thread's first turn. */
+export const NO_USAGE: TurnUsage = { inputTokens: 0, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 0 };
+
+/**
+ * What a turn used, from its last `result`, and the session's running count
+ * to measure the next turn from.
+ *
+ * `modelUsage` counts every request the session has made (main loop, subagents,
+ * compaction), and a resumed session carries its earlier turns' counts forward,
+ * so a turn's share is that total less `baseline`, the total when the turn
+ * began. With no baseline (a thread resumed in a new process), or a total that
+ * went backwards, the turn reports `usage` instead: its main loop's requests
+ * alone, which the CLI counts per turn.
+ */
+export function turnUsageOf(
+  result: unknown,
+  baseline: TurnUsage | null,
+): { usage: TurnUsage | null; totals: TurnUsage | null } {
+  const r = (result ?? {}) as ResultUsage;
+  const totals = sessionTotals(r);
+  if (totals && baseline) {
+    const spent: TurnUsage = {
+      inputTokens: totals.inputTokens - baseline.inputTokens,
+      cachedInputTokens: (totals.cachedInputTokens ?? 0) - (baseline.cachedInputTokens ?? 0),
+      cacheWriteInputTokens: (totals.cacheWriteInputTokens ?? 0) - (baseline.cacheWriteInputTokens ?? 0),
+      outputTokens: totals.outputTokens - baseline.outputTokens,
+      ...(totals.reasoningOutputTokens != null
+        ? { reasoningOutputTokens: totals.reasoningOutputTokens - (baseline.reasoningOutputTokens ?? 0) }
+        : {}),
+    };
+    if (Object.values(spent).every((n) => n >= 0)) return { usage: spent, totals };
+  }
+  return { usage: mainLoopUsage(r), totals };
 }
 
 /** Subset of the SDK's `getContextUsage()` response (the data behind `/context`)
