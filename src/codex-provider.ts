@@ -14,6 +14,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 
 import type {
   AgentEvent,
@@ -616,6 +617,7 @@ export class CodexAgentProvider implements AgentProvider {
     if (settings.introduce) this.workspaceIntros.set(threadId, settings.instructions);
     try {
       if (!this.liveThreads.has(threadId)) return;
+      await this.writeRollout(threadId, settings);
       this.liveThreads.delete(threadId);
       await this.client.request("thread/unsubscribe", { threadId });
       await this.threadResumeRaw(threadId);
@@ -627,6 +629,31 @@ export class CodexAgentProvider implements AgentProvider {
       else this.workspaceIntros.delete(threadId);
       throw err;
     }
+  }
+
+  /**
+   * Make sure a loaded thread can be reloaded. Codex writes a thread's rollout
+   * with its first item, so a thread that has had no turn has none, and
+   * unloading it would lose the thread. Appending one developer note writes it,
+   * without a model call; the note states only the folder the thread now works in.
+   */
+  private async writeRollout(threadId: string, settings: WorkspaceSettings): Promise<void> {
+    const read = (await this.client.request("thread/read", { threadId, includeTurns: false })) as {
+      thread?: { path?: string | null };
+    };
+    const path = read.thread?.path;
+    // No path to check (an older build): assume the rollout is there, as before.
+    if (!path || existsSync(path)) return;
+    await this.client.request("thread/inject_items", {
+      threadId,
+      items: [
+        {
+          type: "message",
+          role: "developer",
+          content: [{ type: "input_text", text: `This conversation works in the folder ${settings.root}.` }],
+        },
+      ],
+    });
   }
 
   /**

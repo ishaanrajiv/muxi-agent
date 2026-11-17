@@ -385,9 +385,11 @@ interface WorkspaceSettings {
     absolute path a read targets. A Glob also carries `detail._meta.pattern`,
     which can reach outside that path (`/etc/**`, `../**`): check it too.
   - On Codex, a request `refusal()` refuses is declined without the host seeing it.
-  - Known Codex gaps: `configureWorkspace` on a thread that has had no turn yet
-    fails ("no rollout found"), and a `codex` binary installed under `~/.codex`
-    can't re-run itself inside the workspace sandbox, which hides `~/.codex`.
+  - A Codex thread can be switched before its first turn. Codex has saved nothing for such a
+    thread yet, so the provider first appends one developer note naming the folder, which
+    costs no model call.
+  - Known Codex gap: a `codex` binary installed under `~/.codex` can't re-run itself inside
+    the workspace sandbox, which hides `~/.codex`.
 - **The sandbox is required.** Claude's Bash runs in the SDK sandbox with no
   unsandboxed fallback (with `shell: false` there is no Bash, and no sandbox). Codex gets a per-thread permission profile, or the
   `workspaceWrite` sandbox on builds without profiles.
