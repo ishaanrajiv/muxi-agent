@@ -253,6 +253,14 @@ export interface AgentProvider {
    *  first `opts.keepTurns` turns of it. */
   forkThread(threadId: string, opts?: HistoryCut): Promise<Thread>;
 
+  /**
+   * Compact a thread's conversation now, rather than when the backend next decides to. The stream
+   * is a turn's: `turn.started` with the trigger {@link COMPACT_TRIGGER}, `context.compaction`
+   * events with trigger `manual`, then exactly one terminal event. The thread must be idle. Claude
+   * rejects a thread that has no conversation yet; Codex rejects `instructions`.
+   */
+  compactThread?(threadId: string, opts?: CompactThreadOptions): AsyncIterable<TurnStreamEvent>;
+
   /** Whether this backend can fold a message into the running turn
    *  ({@link steerTurn}). When false, queue the message as the next turn. */
   readonly supportsSteer?: boolean;
@@ -272,3 +280,11 @@ export interface AgentProvider {
    *  such live subagent. */
   stopSubagent?(threadId: string, subagentId: string): Promise<boolean>;
 }
+
+export interface CompactThreadOptions {
+  /** What the summary must keep, in plain words, for this compaction only. Claude only. */
+  instructions?: string;
+}
+
+/** The `trigger` on the `turn.started` of a turn {@link AgentProvider.compactThread} runs. */
+export const COMPACT_TRIGGER = { kind: "compact" } as const;

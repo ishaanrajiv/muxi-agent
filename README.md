@@ -95,6 +95,7 @@ interface AgentProvider {
   supportsSteer?: boolean;
   steerTurn?(threadId: string, turnId: string, text: string, steerId?: string): Promise<void>;
   stopSubagent?(threadId: string, subagentId: string): Promise<boolean>;
+  compactThread?(threadId: string, opts?: { instructions?: string }): AsyncIterable<TurnStreamEvent>;
 }
 ```
 
@@ -159,6 +160,24 @@ documents but leaves their contents out.
 With `outputSchema`, the turn's last `agent.message.completed` is JSON matching
 the schema. Claude uses the SDK's `outputFormat`; Codex uses `outputSchema` on
 `turn/start`.
+
+### Compacting a thread
+
+Both backends compact a conversation on their own as it fills. `compactThread(threadId, opts?)`
+does it now instead, on an idle thread, and streams like a turn: `turn.started` with
+`trigger: { kind: "compact" }` (`COMPACT_TRIGGER`) and no prompt, `context.compaction` events with
+trigger `manual`, then one terminal event.
+
+```ts
+for await (const ev of provider.compactThread?.(thread.id, { instructions: "Keep every open question." }) ?? []) {
+  if (ev.type === "context.compaction" && ev.phase === "completed") console.log(ev.preTokens, "→", ev.postTokens);
+}
+```
+
+`instructions` say what the summary must keep, for this compaction only. They are Claude only:
+Codex writes its summary its own way and rejects them. Claude rejects a thread that has no
+conversation yet. On Claude the compaction is the CLI's `/compact` command sent as a turn, so it
+carries none of the text the provider otherwise adds to a prompt.
 
 ### Persisting and resuming
 

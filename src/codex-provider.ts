@@ -32,7 +32,7 @@ import { decisionToWireForRequest, notificationToEvent, requestToApproval } from
 import { codexBucket, codexUsage, codexUsageLimitMessage, isCodexBucket, mergeRateLimits } from "./codex-usage.ts";
 import { readCodexAccount } from "./codex-account.ts";
 import { probe } from "./probe.ts";
-import type { AgentProvider } from "./provider.ts";
+import type { AgentProvider, CompactThreadOptions } from "./provider.ts";
 import type { RequestId } from "./generated/RequestId.ts";
 import type { ServerNotification } from "./generated/ServerNotification.ts";
 import type { ServerRequest } from "./generated/ServerRequest.ts";
@@ -49,7 +49,7 @@ import type {
   UtilityTurnResult,
   WorkspaceSettings,
 } from "./provider.ts";
-import { InvalidRollbackError } from "./provider.ts";
+import { COMPACT_TRIGGER, InvalidRollbackError } from "./provider.ts";
 import { errorMessage, PendingApprovalNotFoundError, userPrompt } from "./shared.ts";
 import { checkSubagentRole, type SubagentRole } from "./subagents.ts";
 import { CompactionSizes } from "./codex/compaction.ts";
@@ -768,6 +768,15 @@ export class CodexAgentProvider implements AgentProvider {
     );
   }
 
+  /** Compact the thread now. Codex writes the summary its own way and takes no
+   *  instructions for it, so asking for some is refused rather than dropped. */
+  async *compactThread(threadId: string, opts: CompactThreadOptions = {}): AsyncIterable<AgentEvent> {
+    if (opts.instructions?.trim()) {
+      throw new Error('Codex compactions take no instructions ("instructions" is Claude only).');
+    }
+    yield* this.sendTurnInternal(threadId, { text: "" }, { compact: true, started: { provider: "codex", trigger: COMPACT_TRIGGER } });
+  }
+
   private async *sendTurnInternal(
     threadId: string,
     input: TurnInput,
@@ -778,7 +787,10 @@ export class CodexAgentProvider implements AgentProvider {
     const turn = new CodexTurn(
       threadId,
       {
-        decorate: (ev) => this.compactions.decorate(this.withUsageWindow(ev)),
+        decorate: (ev) => {
+          const out = this.compactions.decorate(this.withUsageWindow(ev));
+          return options.compact && out.type === "context.compaction" ? { ...out, trigger: "manual" } : out;
+        },
         interrupt: (turnId) => this.interrupt(threadId, turnId),
         takeHeldNotices: () => this.heldNotices.splice(0),
       },
@@ -872,24 +884,30 @@ export class CodexAgentProvider implements AgentProvider {
     const timer = setTimeout(() => turn.onTimeout(timeoutMs), timeoutMs);
 
     try {
-      const params = turnStartParams({
-        threadId,
-        input,
-        intro: this.workspaceIntros.get(threadId),
-        effort: this.resolveEffort(input.model, input.effort),
-        options,
-        workspace: this.workspaceThreads.get(threadId),
-        profile: this.workspaceProfiles.get(threadId),
-      });
-      const started = (await this.client.turnStart(params)) as { turn?: { id?: string } };
-      turn.activeTurnId = started.turn?.id ?? turn.activeTurnId;
+      if (options.compact) {
+        // Its turn id comes with `turn/started`: the request's answer is empty.
+        await this.client.threadCompactStart(threadId);
+      } else {
+        const params = turnStartParams({
+          threadId,
+          input,
+          intro: this.workspaceIntros.get(threadId),
+          effort: this.resolveEffort(input.model, input.effort),
+          options,
+          workspace: this.workspaceThreads.get(threadId),
+          profile: this.workspaceProfiles.get(threadId),
+        });
+        const started = (await this.client.turnStart(params)) as { turn?: { id?: string } };
+        turn.activeTurnId = started.turn?.id ?? turn.activeTurnId;
+      }
 
       const { queue } = turn;
       for (;;) {
         for (let ev = queue.shift(); ev; ev = queue.shift()) yield ev;
         if (queue.done) {
           if (queue.failure) throw queue.failure;
-          this.workspaceIntros.delete(threadId);
+          // A compaction sent no input, so the intro still waits for a real turn.
+          if (!options.compact) this.workspaceIntros.delete(threadId);
           return;
         }
         await queue.wait();
