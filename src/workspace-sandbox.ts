@@ -30,6 +30,11 @@ const CREDENTIAL_HOME_PATHS = [
  *  monorepo keeps them beside each package). */
 const ENV_FILE_GLOBS = [".env", ".env.*", "**/.env", "**/.env.*"];
 
+/** The credential and agent folders under `home`, each hidden whole. */
+export function credentialHomePaths(home = homedir()): string[] {
+  return CREDENTIAL_HOME_PATHS.map((p) => join(home, p));
+}
+
 export type WorkspaceSandboxPaths = Pick<WorkspaceSettings, "root" | "protectedPaths" | "cacheDir">;
 
 /** The paths a workspace thread's sandboxed shell may not read. */
@@ -40,7 +45,7 @@ export function workspaceDenyReadPaths(
 ): string[] {
   const keep = [ws.root, ...(ws.cacheDir ? [ws.cacheDir] : [])];
   return [
-    ...CREDENTIAL_HOME_PATHS.map((p) => join(home, p)),
+    ...credentialHomePaths(home),
     ...(env.CLAUDE_CONFIG_DIR ? [env.CLAUDE_CONFIG_DIR] : []),
     ...(env.CODEX_HOME ? [env.CODEX_HOME] : []),
     ...ENV_FILE_GLOBS.map((g) => join(ws.root, g)),

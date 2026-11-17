@@ -3,6 +3,8 @@
  * the overrides a workspace thread's loads and turns carry.
  */
 
+import { homedir } from "node:os";
+
 import type { CodexClient } from "../codex-client.ts";
 import type { JsonValue } from "../generated/serde_json/JsonValue.ts";
 import type { SandboxPolicy } from "../generated/v2/SandboxPolicy.ts";
@@ -28,13 +30,17 @@ export async function writeWorkspaceProfile(
   client: CodexClient,
   threadId: string,
   settings: WorkspaceSettings,
+  codexHome?: string,
 ): Promise<string | null> {
   const id = `muxi-agent-workspace-${threadId}`;
+  // The app-server's own home holds its sessions and, after a login made there, a real
+  // `auth.json`: hidden like the user's, whatever the host's own env says.
+  const env = codexHome ? { ...process.env, CODEX_HOME: codexHome } : process.env;
   try {
     await client.request("config/batchWrite", {
       edits: [
         { keyPath: "default_permissions", value: ":read-only", mergeStrategy: "replace" },
-        { keyPath: `permissions.${id}`, value: codexWorkspaceProfile(settings), mergeStrategy: "replace" },
+        { keyPath: `permissions.${id}`, value: codexWorkspaceProfile(settings, homedir(), env), mergeStrategy: "replace" },
       ],
     });
     return id;

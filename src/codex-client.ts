@@ -43,6 +43,8 @@ type ServerMessage =
 export interface CodexClientOptions {
   /** Path to the codex binary (default: "codex"). */
   codexBin?: string;
+  /** The executable to spawn for `codexBin`, asked at every start. */
+  resolveBin?: (codexBin: string) => string;
   /** Extra CLI args for `codex app-server`. */
   extraArgs?: string[];
   /** Working directory for the app-server process. */
@@ -83,7 +85,8 @@ export class CodexClient extends EventEmitter {
     RequestId,
     { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
   >();
-  private opts: Required<Omit<CodexClientOptions, "wireLogPath">>;
+  private opts: Required<Omit<CodexClientOptions, "wireLogPath" | "resolveBin">>;
+  private readonly resolveBin: CodexClientOptions["resolveBin"];
   private readonly wireLogPath: string | undefined;
   private wireStartedAt = 0;
 
@@ -95,6 +98,7 @@ export class CodexClient extends EventEmitter {
       cwd: opts.cwd ?? process.cwd(),
       env: opts.env ?? {},
     };
+    this.resolveBin = opts.resolveBin;
     this.wireLogPath = opts.wireLogPath ?? (process.env.MUXI_AGENT_CODEX_WIRE_LOG || undefined);
   }
 
@@ -106,7 +110,7 @@ export class CodexClient extends EventEmitter {
     this.wireStartedAt = Date.now();
     const generation = ++this.generation;
     const current = () => generation === this.generation;
-    this.proc = spawn(this.opts.codexBin, args, {
+    this.proc = spawn(this.resolveBin?.(this.opts.codexBin) ?? this.opts.codexBin, args, {
       cwd: this.opts.cwd,
       env: { ...process.env, ...this.opts.env },
       stdio: ["pipe", "pipe", "pipe"],

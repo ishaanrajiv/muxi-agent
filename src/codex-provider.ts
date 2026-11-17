@@ -15,6 +15,8 @@
 
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import type {
   AgentEvent,
@@ -53,7 +55,9 @@ import type {
 import { COMPACT_TRIGGER, InvalidRollbackError } from "./provider.ts";
 import { errorMessage, PendingApprovalNotFoundError, userPrompt } from "./shared.ts";
 import { checkSubagentRole, type SubagentRole } from "./subagents.ts";
+import { hiddenCodexBin, sandboxVisibleCodexBin } from "./codex/bin.ts";
 import { CompactionSizes } from "./codex/compaction.ts";
+import { credentialHomePaths } from "./workspace-sandbox.ts";
 import { prepareCodexHome } from "./codex/home.ts";
 import { CodexSubagents } from "./codex/subagents.ts";
 import { EMPTY_SETUP, threadConfig, type ThreadSetup } from "./codex/thread-config.ts";
@@ -86,7 +90,7 @@ const STEER_TIMEOUT_MS = 5_000;
 /** Why a Codex thread can't have both the web and a workspace (its shell). */
 export const CODEX_WEB_AND_SHELL = "Codex can't work a workspace on a thread with web search: its shell and the web together aren't allowed.";
 
-export interface CodexAgentProviderOptions extends Omit<CodexClientOptions, "env"> {
+export interface CodexAgentProviderOptions extends Omit<CodexClientOptions, "env" | "resolveBin"> {
   /**
    * The dedicated `CODEX_HOME` the app-server runs under: a folder of the
    * provider's own, never the user's `~/.codex`. Prepared on every start (see
@@ -95,6 +99,14 @@ export interface CodexAgentProviderOptions extends Omit<CodexClientOptions, "env
   codexHome: string;
   /** The user's own Codex home, whose login is linked in. Default `~/.codex`. */
   userCodexHome?: string;
+  /**
+   * Where a `codex` install that sits in a folder the workspace sandbox hides
+   * (`~/.codex`, the standalone installer's default) is mirrored with hard links,
+   * so its shell can run (see `codex/bin.ts`). A workspace's shell must not be
+   * able to write here. Default `$XDG_CACHE_HOME/muxi-agent/codex-bin`, or
+   * `~/.cache/muxi-agent/codex-bin`.
+   */
+  codexBinStageDir?: string;
   /** Extra env for every codex invocation. `CODEX_HOME` is always `codexHome`. */
   env?: Record<string, string>;
   /** The subagent role. Without it no thread gets subagents, whatever it asks. */
@@ -129,6 +141,10 @@ export class CodexAgentProvider implements AgentProvider {
    */
   private readonly execEnv: Record<string, string>;
   private readonly codexHome: string;
+  private readonly stageDir: string;
+  /** The executable the app-server runs from: {@link codexBin}, or its staged
+   *  mirror. Settled at the first start. */
+  private spawnBin: string | null = null;
   private readonly userCodexHome: string | undefined;
   private readonly subagentRole: SubagentRole | undefined;
   /**
@@ -225,13 +241,25 @@ export class CodexAgentProvider implements AgentProvider {
   private readonly subagentLineage = new Map<string, Set<string>>();
 
   constructor(opts: CodexAgentProviderOptions) {
-    const { turnTimeoutMs, idleSweepMs, idleUnloadMs, codexHome, userCodexHome, subagent, env, ...clientOpts } = opts;
+    const { turnTimeoutMs, idleSweepMs, idleUnloadMs, codexHome, userCodexHome, codexBinStageDir, subagent, env, ...clientOpts } = opts;
+    this.stageDir =
+      codexBinStageDir ?? join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "muxi-agent", "codex-bin");
     if (!codexHome) throw new Error("CodexAgentProvider needs a dedicated codexHome");
     this.codexHome = codexHome;
     this.userCodexHome = userCodexHome;
     this.subagentRole = subagent ? checkSubagentRole(subagent) : undefined;
     this.execEnv = { ...env, CODEX_HOME: codexHome };
-    this.client = new CodexClient({ ...clientOpts, env: this.execEnv });
+    this.client = new CodexClient({
+      ...clientOpts,
+      env: this.execEnv,
+      // Settled at the first spawn, and the same for every respawn.
+      resolveBin: (codexBin) =>
+        (this.spawnBin ??= sandboxVisibleCodexBin(codexBin, {
+          hidden: this.hiddenFolders(),
+          stageDir: this.stageDir,
+          pathEnv: this.pathEnv(),
+        })),
+    });
     this.clock = new TimeoutClock(this.client);
     this.idleSweepMs = idleSweepMs ?? 5 * 60_000;
     this.idleUnloadMs = idleUnloadMs ?? 30 * 60_000;
@@ -610,7 +638,8 @@ export class CodexAgentProvider implements AgentProvider {
     // A failed switch leaves the thread exactly as it was.
     const prior = { settings: this.workspaceThreads.get(threadId), intro: this.workspaceIntros.get(threadId) };
     await this.ensureStarted();
-    const profile = await writeWorkspaceProfile(this.client, threadId, settings);
+    this.checkShellCanRun(settings);
+    const profile = await writeWorkspaceProfile(this.client, threadId, settings, this.codexHome);
     if (profile) this.workspaceProfiles.set(threadId, profile);
     else this.workspaceProfiles.delete(threadId);
     this.workspaceThreads.set(threadId, settings);
@@ -1064,6 +1093,35 @@ export class CodexAgentProvider implements AgentProvider {
       this.setups.get(threadId)?.subagents === true &&
       !this.workspaceThreads.has(threadId)
     );
+  }
+
+  /** The folders every workspace sandbox hides whole: the user's credential and
+   *  agent folders, and the app-server's own home. */
+  private hiddenFolders(): string[] {
+    return [...credentialHomePaths(), this.codexHome];
+  }
+
+  private pathEnv(): string {
+    return this.execEnv.PATH ?? process.env.PATH ?? "";
+  }
+
+  /**
+   * Codex runs a workspace's shell commands by re-running its own executable
+   * inside the sandbox. One the sandbox hides can't run any, and one the shell
+   * can write could be replaced by it: both are refused here, so a thread never
+   * gets a shell that fails every command.
+   */
+  private checkShellCanRun(settings: WorkspaceSettings): void {
+    const bin = this.spawnBin ?? this.codexBin;
+    const hidden = hiddenCodexBin(bin, this.hiddenFolders(), this.pathEnv());
+    if (hidden) {
+      throw new Error(
+        `Codex can't run a workspace shell from an executable inside ${hidden}, which the sandbox hides. Point "codexBin" at an install elsewhere.`,
+      );
+    }
+    const writable = [settings.root, ...(settings.cacheDir ? [settings.cacheDir] : [])];
+    const open = hiddenCodexBin(bin, writable, this.pathEnv());
+    if (open) throw new Error(`Codex's executable is inside ${open}, which the workspace shell can write.`);
   }
 
   /** Write the dedicated home (see `codex/home.ts`). */
