@@ -5,7 +5,7 @@ import type { query } from "@anthropic-ai/claude-agent-sdk";
 import type { StartThreadInput, TurnInput, TurnStreamEvent } from "./types/index.ts";
 
 import { ClaudeAgentProvider } from "./claude-provider.ts";
-import { parseClaudeUsage, pickContextWindow, readContextUsage } from "./claude/usage.ts";
+import { NO_USAGE, parseClaudeUsage, pickContextWindow, readContextUsage, turnUsageOf } from "./claude/usage.ts";
 
 // A representative `claude -p "/usage"` body (the `result` string of the JSON
 // envelope). We only assert on the parsed windows — the prose below the windows
@@ -172,4 +172,89 @@ test("context fill updates before the turn ends once a past turn reported the wi
   };
   assert.deepEqual(await fills(), [10_000, "end"], "the first turn has no window until its result");
   assert.deepEqual(await fills(), [20_000, 30_000, 30_000, "end"], "repeats and subagent sizes are not reported");
+});
+
+// ── what a turn used ─────────────────────────────────────────────────────────
+
+test("a turn's usage is the session's count less what it had used before the turn", () => {
+  const result = {
+    usage: { input_tokens: 1, output_tokens: 1 },
+    modelUsage: {
+      main: { inputTokens: 100, outputTokens: 40, cacheReadInputTokens: 900, cacheCreationInputTokens: 50, thinkingTokens: 10 },
+      sub: { inputTokens: 20, outputTokens: 5, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+    },
+  };
+  const totals = { inputTokens: 1070, cachedInputTokens: 900, cacheWriteInputTokens: 50, outputTokens: 45, reasoningOutputTokens: 10 };
+  assert.deepEqual(turnUsageOf(result, NO_USAGE), { usage: totals, totals });
+  assert.deepEqual(
+    turnUsageOf(result, { inputTokens: 1000, cachedInputTokens: 880, cacheWriteInputTokens: 50, outputTokens: 30, reasoningOutputTokens: 4 }).usage,
+    { inputTokens: 70, cachedInputTokens: 20, cacheWriteInputTokens: 0, outputTokens: 15, reasoningOutputTokens: 6 },
+  );
+});
+
+test("with no baseline, no per-model counts or a count that went backwards, a turn reports its main loop", () => {
+  const main = { input_tokens: 7, output_tokens: 3, cache_read_input_tokens: 30, cache_creation_input_tokens: null };
+  const mainLoop = { inputTokens: 37, cachedInputTokens: 30, cacheWriteInputTokens: 0, outputTokens: 3 };
+  const counted = { m: { inputTokens: 500, outputTokens: 50, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 } };
+  assert.deepEqual(turnUsageOf({ modelUsage: counted, usage: main }, null).usage, mainLoop, "baseline unknown");
+  assert.deepEqual(turnUsageOf({ modelUsage: { m: { contextWindow: 200_000 } }, usage: main }, NO_USAGE), { usage: mainLoop, totals: null });
+  assert.deepEqual(
+    turnUsageOf({ modelUsage: counted, usage: main }, { inputTokens: 9_000, outputTokens: 900 }).usage,
+    mainLoop,
+    "the session's count restarted",
+  );
+  assert.deepEqual(turnUsageOf({ modelUsage: { m: { contextWindow: 200_000 } } }, NO_USAGE), { usage: null, totals: null });
+  assert.deepEqual(turnUsageOf({}, null), { usage: null, totals: null });
+});
+
+test("turn.completed carries each turn's own share of a session's running count", async () => {
+  const assistant = { type: "assistant", uuid: "a", message: { content: [{ type: "text", text: "ok" }] } };
+  const result = (extra: Record<string, unknown>) => ({ type: "result", subtype: "success", is_error: false, result: "ok", ...extra });
+  const count = (inputTokens: number, outputTokens: number, cacheReadInputTokens: number) => ({
+    modelUsage: { m: { inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens: 0 } },
+  });
+  // The session's count runs on from turn to turn, as a resumed session's does.
+  const turns = [[assistant, result(count(12, 4, 8))], [assistant, result(count(30, 9, 40))], [assistant, result({})]];
+  let call = 0;
+  const queryFn = (() => {
+    const frames = turns[call++];
+    return (async function* () {
+      for (const f of frames) yield f;
+    })();
+  }) as unknown as typeof query;
+  const provider = new ClaudeAgentProvider({ queryFn });
+  const thread = await provider.startThread({ cwd: "/ws" } as StartThreadInput);
+  const completion = async (p: ClaudeAgentProvider) => {
+    for await (const ev of p.sendTurn(thread.id, { text: "q" } as TurnInput) as AsyncIterable<TurnStreamEvent>) {
+      if (ev.type === "turn.completed") return ev;
+    }
+    return null;
+  };
+  assert.deepEqual((await completion(provider))?.usage, { inputTokens: 20, cachedInputTokens: 8, cacheWriteInputTokens: 0, outputTokens: 4 });
+  assert.deepEqual((await completion(provider))?.usage, { inputTokens: 50, cachedInputTokens: 32, cacheWriteInputTokens: 0, outputTokens: 5 });
+  const bare = await completion(provider);
+  assert.ok(bare);
+  assert.equal("usage" in bare, false, "a result with no count");
+});
+
+test("a thread resumed in a new process reports its first turn from the main loop's count", async () => {
+  const assistant = { type: "assistant", uuid: "a", message: { content: [{ type: "text", text: "ok" }] } };
+  const frames = [
+    assistant,
+    {
+      type: "result", subtype: "success", is_error: false, result: "ok",
+      usage: { input_tokens: 5, output_tokens: 2, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      modelUsage: { m: { inputTokens: 9_000, outputTokens: 700, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 } },
+    },
+  ];
+  const provider = new ClaudeAgentProvider({
+    queryFn: (() => (async function* () { for (const f of frames) yield f; })()) as unknown as typeof query,
+    sessionCheck: { state: async () => "saved", clear: async () => false },
+  });
+  await provider.resumeThread("11111111-1111-4111-8111-111111111111", { cwd: "/ws" });
+  let usage: unknown;
+  for await (const ev of provider.sendTurn("11111111-1111-4111-8111-111111111111", { text: "q" } as TurnInput) as AsyncIterable<TurnStreamEvent>) {
+    if (ev.type === "turn.completed") usage = ev.usage;
+  }
+  assert.deepEqual(usage, { inputTokens: 5, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 2 });
 });

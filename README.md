@@ -189,7 +189,18 @@ rollout under its `CODEX_HOME`. Claude resumes its session transcript.
 | `turn.steer.read` | A steer the model has read. |
 | `prompts.returned` | Steers the turn never took, handed back. |
 | `error.raised` | `code` (see below), `message` and `fatal`. A non-fatal error is a warning. |
-| `turn.completed` | The turn ended. Exactly one terminal event: this, or a fatal `error.raised`. |
+| `turn.completed` | The turn ended, with the tokens it used (`usage`, below) when the backend reported them. Exactly one terminal event: this, or a fatal `error.raised`. |
+
+`turn.completed.usage` is what the turn's model requests used, summed over the
+turn, its subagents' requests included: `{ inputTokens, cachedInputTokens?,
+cacheWriteInputTokens?, outputTokens, reasoningOutputTokens? }`. `inputTokens`
+counts every input token, the cached ones included, and `outputTokens` includes
+reasoning. Every request re-reads the conversation, so a turn of several tool
+rounds counts its context several times: this is what the turn cost, and
+`context.usage` is how full the context is. It is absent when the backend gave
+no count, on a turn stopped before any request finished for example. A Claude
+thread resumed in a new process reports its first turn there from the main
+agent's requests alone, without its subagents'.
 
 Error codes (`ERROR_CODES`): `binary_missing`, `not_logged_in`, `network`,
 `timeout`, `mcp_unavailable`, `cli_outdated`, `config_invalid`, `usage_limit`,

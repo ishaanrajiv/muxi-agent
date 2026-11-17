@@ -5,7 +5,7 @@
  * reaches the stream exactly as Codex's does, so both backends fold the same.
  */
 
-import type { AgentEvent, ToolDenial, ToolInputDelta } from "../types/index.ts";
+import type { AgentEvent, ToolDenial, ToolInputDelta, TurnUsage } from "../types/index.ts";
 import { normalizeWorkSummary, WEB_SEARCH_TOOL } from "../types/index.ts";
 import type { SDKMessage, SDKRateLimitInfo } from "@anthropic-ai/claude-agent-sdk";
 
@@ -24,6 +24,7 @@ import { applyPlanResult, type PlanState } from "./plan.ts";
 import { parseToolName, PLAN_TOOLS, toContentBlocks, TOOL_SEARCH } from "./tools.ts";
 import { closeTurnInput, consumedPrompts, type LiveTurn } from "./turn.ts";
 import { CLAUDE_WEB_SEARCH, claudeWebSearchResult } from "../web-search.ts";
+import { turnUsageOf } from "./usage.ts";
 
 /** One in-flight tool call, keyed by tool_use id, so the matching tool_result can
  *  name the call and report its wall-clock duration. `input` is retained only for
@@ -77,6 +78,11 @@ export interface TurnScope {
   /** Whether a mid-turn message folds into the turn (the provider's
    *  `supportsSteer`). */
   supportsSteer: boolean;
+  /** What the thread's session had used when the turn began: zero for a new
+   *  session, null when unknown (see `turnUsageOf`). */
+  usageBaseline: TurnUsage | null;
+  /** Keep the session's running count for the thread's next turn. */
+  noteUsageTotals: (totals: TurnUsage) => void;
   /** How long a rejected rate limit may park the turn (see {@link onRateLimit}). */
   rateLimitParkMs: number;
   /** The thread's plan accumulator, which a plan tool's result folds into. */
@@ -572,6 +578,10 @@ export function mapMessage(msg: SDKMessage, scope: TurnScope): void {
         text: JSON.stringify(structured),
       });
     }
-    push({ type: "turn.completed", threadId, turnId });
+    // The last result's count, less what the session had used when the turn
+    // began (see `turnUsageOf`).
+    const { usage, totals } = turnUsageOf(msg, scope.usageBaseline);
+    if (totals) scope.noteUsageTotals(totals);
+    push({ type: "turn.completed", threadId, turnId, ...(usage ? { usage } : {}) });
   }
 }

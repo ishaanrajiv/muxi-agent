@@ -4,7 +4,7 @@
  * app-server or a timeout ends it, and the `turn/start` request that opens it.
  */
 
-import type { AgentEvent, DocumentAttachment, TurnInput } from "../types/index.ts";
+import type { AgentEvent, DocumentAttachment, TurnInput, TurnUsage } from "../types/index.ts";
 
 import type { ReasoningEffort as CodexReasoningEffort } from "../generated/ReasoningEffort.ts";
 import type { ServerNotification } from "../generated/ServerNotification.ts";
@@ -58,6 +58,8 @@ export class CodexTurn {
   readonly queue = new TurnQueue<AgentEvent>();
   /** The id Codex gave this turn, once `turn/started` or `turn/start` said. */
   activeTurnId: string | null = null;
+  /** The tokens the turn's requests have used so far; null until one reports. */
+  private usage: TurnUsage | null = null;
   /** The changes each fileChange item announced, by item id: its approval
    *  request names only the item. */
   readonly fileChanges = new Map<string, FileUpdateChange[]>();
@@ -91,7 +93,12 @@ export class CodexTurn {
   push(raw: AgentEvent): void {
     const stamped =
       raw.type === "turn.started" && raw.threadId === this.threadId && this.started ? { ...raw, ...this.started } : raw;
-    const ev = this.host.decorate(stamped);
+    const decorated = this.host.decorate(stamped);
+    // The turn's own completion carries what its requests used.
+    const ev =
+      decorated.type === "turn.completed" && decorated.threadId === this.threadId && this.usage
+        ? { ...decorated, usage: { ...this.usage } }
+        : decorated;
     // No subagent outlives its turn, so none reads as running after it.
     if (ev.type === "turn.completed" || (ev.type === "error.raised" && ev.fatal !== false)) this.subagents?.stopAll("ended");
     this.output.note(ev);
@@ -116,6 +123,20 @@ export class CodexTurn {
     }
     if (n.method === "thread/tokenUsage/updated" && n.params.threadId === threadId) {
       this.onTokenUsage?.(n.params.tokenUsage.last);
+    }
+    // Each update's `last` is one model request. The turn's own and its
+    // subagents' add up to what the turn used.
+    if (
+      n.method === "thread/tokenUsage/updated" &&
+      (n.params.threadId === threadId || this.subagents?.isChild(n.params.threadId))
+    ) {
+      const last = n.params.tokenUsage.last;
+      const sum = (this.usage ??= { inputTokens: 0, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 });
+      sum.inputTokens += last.inputTokens;
+      sum.cachedInputTokens = (sum.cachedInputTokens ?? 0) + last.cachedInputTokens;
+      sum.cacheWriteInputTokens = (sum.cacheWriteInputTokens ?? 0) + last.cacheWriteInputTokens;
+      sum.outputTokens += last.outputTokens;
+      sum.reasoningOutputTokens = (sum.reasoningOutputTokens ?? 0) + last.reasoningOutputTokens;
     }
     // Every notification lands on every in-flight turn — including `error`
     // events, which now carry the thread they belong to. Anything not addressed

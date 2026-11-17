@@ -1201,6 +1201,31 @@ test("a compaction reports the size before and the size Codex reports after", as
   ]);
 });
 
+// ── what a turn used ─────────────────────────────────────────────────────────
+
+test("turn.completed carries the sum of the turn's requests, and none when nothing was reported", async () => {
+  const request = (inputTokens: number, cachedInputTokens: number, outputTokens: number, reasoningOutputTokens: number) => {
+    const last = { totalTokens: inputTokens + outputTokens, inputTokens, cachedInputTokens, cacheWriteInputTokens: 0, outputTokens, reasoningOutputTokens };
+    return {
+      method: "thread/tokenUsage/updated",
+      // `total` is the thread's running count, which a turn must not report as its own.
+      params: { threadId: "t1", turnId: "turn1", tokenUsage: { last, total: { ...last, inputTokens: 999_999 }, modelContextWindow: 258_400 } },
+    };
+  };
+  const done = completed({ status: "completed", error: null });
+  const used = await runTurn([started, request(3_000, 0, 30, 10), request(3_600, 3_000, 12, 0), done]);
+  assert.deepEqual(used.find((e) => e.type === "turn.completed")?.usage, {
+    inputTokens: 6_600,
+    cachedInputTokens: 3_000,
+    cacheWriteInputTokens: 0,
+    outputTokens: 42,
+    reasoningOutputTokens: 10,
+  });
+  const silent = (await runTurn([started, done])).find((e) => e.type === "turn.completed");
+  assert.ok(silent);
+  assert.equal("usage" in silent, false);
+});
+
 // ── idle unload ──────────────────────────────────────────────────────────────
 
 /** The methods the fake app-server logged, in order ([] before it spawned). */

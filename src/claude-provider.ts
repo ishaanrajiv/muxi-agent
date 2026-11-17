@@ -125,7 +125,7 @@ import {
   PromptChannel,
   stopTurn,
 } from "./claude/turn.ts";
-import { scrapeClaudeUsage, structuredClaudeUsage } from "./claude/usage.ts";
+import { NO_USAGE, scrapeClaudeUsage, structuredClaudeUsage } from "./claude/usage.ts";
 
 export interface ClaudeAgentProviderOptions {
   /** Working directory for a thread resumed without one. Defaults to the
@@ -629,6 +629,15 @@ export class ClaudeAgentProvider implements AgentProvider {
 
     const controller = new AbortController();
 
+    // What the session had used before this turn: nothing when the turn creates
+    // it, the last result's count when this process saw one, else unknown.
+    const usageSession = this.sdkSessionId(threadId);
+    const usageBaseline = state.fresh
+      ? NO_USAGE
+      : state.usageTotals?.sessionId === usageSession
+        ? state.usageTotals.totals
+        : null;
+
     // Per-turn overrides win, then the thread's sticky selection, then defaults.
     // The selection sticks for later override-less turns (Codex behaves the same).
     if (input.model) state.model = input.model;
@@ -745,6 +754,10 @@ export class ClaudeAgentProvider implements AgentProvider {
       compacting: false,
       live,
       supportsSteer: this.supportsSteer,
+      usageBaseline,
+      noteUsageTotals: (totals) => {
+        state.usageTotals = { sessionId: usageSession, totals };
+      },
       rateLimitParkMs: this.rateLimitParkMs,
       plan: () => this.ensureThreadState(threadId),
       denials,

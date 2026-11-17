@@ -51,10 +51,33 @@ export const TurnStarted = z.object({
   trigger: TurnTrigger.optional(),
 });
 
+/**
+ * The tokens a turn's model requests used, summed over the turn: every request
+ * the turn made, its subagents' included. A request re-reads the conversation,
+ * so a turn of several tool rounds counts its context several times; this is
+ * what the turn cost, not how full the context is (`context.usage` says that).
+ */
+export const TurnUsage = z.object({
+  /** Every input token the requests read, the cached ones included. */
+  inputTokens: z.number(),
+  /** Of {@link inputTokens}, those read from the prompt cache. */
+  cachedInputTokens: z.number().optional(),
+  /** Of {@link inputTokens}, those written to the prompt cache. */
+  cacheWriteInputTokens: z.number().optional(),
+  /** Every output token, reasoning included. */
+  outputTokens: z.number(),
+  /** Of {@link outputTokens}, the reasoning, where the backend says. */
+  reasoningOutputTokens: z.number().optional(),
+});
+export type TurnUsage = z.infer<typeof TurnUsage>;
+
 export const TurnCompleted = z.object({
   type: z.literal("turn.completed"),
   threadId: z.string(),
   turnId: z.string(),
+  /** What the turn used, when the backend reported it. Absent on a turn that
+   *  ended without a count (stopped before any request finished, say). */
+  usage: TurnUsage.optional(),
 });
 
 /**
