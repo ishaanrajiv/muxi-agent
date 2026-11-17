@@ -320,7 +320,7 @@ export class CodexAgentProvider implements AgentProvider {
    * as the fallback for a codex too old to have the method.
    */
   async probe(): Promise<ProviderStatus> {
-    this.prepareHome();
+    this.prepareIdleHome();
     const auth = await readCodexAccount({ codexBin: this.codexBin, env: this.execEnv });
     const r = await probe(this.codexBin, this.execEnv, { skipLoginCheck: auth !== null });
     return {
@@ -1124,6 +1124,30 @@ export class CodexAgentProvider implements AgentProvider {
     if (open) throw new Error(`Codex's executable is inside ${open}, which the workspace shell can write.`);
   }
 
+  /**
+   * Preparing the home for a fresh app-server rewrote the managed config, and
+   * with it the workspace threads' permission profiles: write them again, so a
+   * thread that outlives its app-server keeps its sandbox.
+   */
+  private async restoreWorkspaceProfiles(): Promise<void> {
+    for (const [threadId, settings] of this.workspaceThreads) {
+      const profile = await writeWorkspaceProfile(this.client, threadId, settings, this.codexHome);
+      if (profile) this.workspaceProfiles.set(threadId, profile);
+      else this.workspaceProfiles.delete(threadId);
+    }
+  }
+
+  /**
+   * Prepare the home for a call that needs no app-server (a probe). A running
+   * app-server's home is already prepared, and its config holds the workspace
+   * threads' permission profiles: rewriting it would fail their next turns
+   * ("default_permissions requires a `[permissions]` table").
+   */
+  private prepareIdleHome(): void {
+    if (this.startPromise || (this.started && this.client.isRunning)) return;
+    this.prepareHome();
+  }
+
   /** Write the dedicated home (see `codex/home.ts`). */
   private prepareHome(): void {
     prepareCodexHome({
@@ -1166,6 +1190,7 @@ export class CodexAgentProvider implements AgentProvider {
       this.prepareHome();
       await this.client.start();
       await this.client.initialize();
+      await this.restoreWorkspaceProfiles();
       this.started = true;
       if (!this.idleSweep) {
         this.idleSweep = setInterval(() => this.sweepIdleThreads(), this.idleSweepMs);

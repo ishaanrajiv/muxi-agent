@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { WorkspaceSettings } from "./provider.ts";
 import type { AgentEvent } from "./types/index.ts";
 
 import { CODEX_WEB_AND_SHELL, CodexAgentProvider } from "./codex-provider.ts";
@@ -239,6 +240,59 @@ for (const written of [false, true]) {
     }
   });
 }
+
+const WORKSPACE: WorkspaceSettings = {
+  root: "/wt",
+  protectedPaths: [],
+  developerInstructions: "dev",
+  systemPrompt: "",
+  instructions: "workspace",
+  introduce: true,
+  refusal: () => null,
+};
+
+test("a probe leaves a running app-server's config alone", async () => {
+  const home = testCodexHome();
+  const provider = new CodexAgentProvider({ ...home, codexBin: FAKE_SERVER });
+  const config = join(home.codexHome, "config.toml");
+  // What a probe does to the home before it asks the CLI anything.
+  const prepare = () => (provider as unknown as { prepareIdleHome(): void }).prepareIdleHome();
+  try {
+    const thread = await provider.startThread({ cwd: process.cwd() });
+    await provider.configureWorkspace(thread.id, WORKSPACE);
+    // What Codex itself writes on `config/batchWrite`: the thread's profile.
+    appendFileSync(config, "\n[permissions.muxi-agent-workspace-t1]\n");
+    prepare();
+    assert.match(readFileSync(config, "utf8"), /\[permissions\.muxi-agent-workspace-t1\]/);
+  } finally {
+    await provider.stop();
+  }
+  prepare();
+  assert.doesNotMatch(readFileSync(config, "utf8"), /\[permissions\./, "a stopped provider's probe prepares the home");
+});
+
+test("a fresh app-server gets its workspace threads' profiles again", async () => {
+  const log = newLog("muxi-agent-codex-profile-again-");
+  const provider = new CodexAgentProvider({
+    ...testCodexHome(),
+    codexBin: FAKE_SERVER,
+    env: { FAKE_NOTIFS: JSON.stringify([started, completed({ status: "completed", error: null })]), FAKE_REQUEST_LOG: log },
+    turnTimeoutMs: 10_000,
+  });
+  try {
+    const thread = await provider.startThread({ cwd: process.cwd() });
+    await provider.configureWorkspace(thread.id, WORKSPACE);
+    provider.retireAppServer();
+    for await (const _ of provider.sendTurn(thread.id, { text: "after" }));
+  } finally {
+    await provider.stop();
+  }
+  const requests = requestsIn(log);
+  const writes = requests.filter((r) => r.method === "config/batchWrite");
+  assert.equal(writes.length, 2, "once on the switch, once for the fresh app-server");
+  const order = requests.map((r) => r.method).filter((m) => m === "config/batchWrite" || m === "turn/start");
+  assert.deepEqual(order, ["config/batchWrite", "config/batchWrite", "turn/start"]);
+});
 
 test("a workspace profile hides the provider's own Codex home", async () => {
   const log = join(mkdtempSync(join(tmpdir(), "muxi-agent-codex-home-deny-")), "requests");
