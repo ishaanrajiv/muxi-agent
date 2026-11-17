@@ -10,7 +10,7 @@
 
 import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 
-import type { ToolGuard } from "../provider.ts";
+import type { CompactionCallbacks, ToolGuard } from "../provider.ts";
 import type { ToolDenial } from "../types/denial.ts";
 
 type Hooks = NonNullable<Options["hooks"]>;
@@ -57,4 +57,43 @@ export function guardReason(guard: ToolGuard, call: Parameters<ToolGuard>[0]): s
   } catch (err) {
     return `Refused: the host's check failed (${(err as Error).message}).`;
   }
+}
+
+/**
+ * The host's {@link CompactionCallbacks} as hooks: `PreCompact`, `PostCompact`,
+ * and the `SessionStart` the CLI fires as a compacted conversation resumes,
+ * which is the one that can add context. A subagent's compaction is its own
+ * business, and a callback that throws must not cost the thread its compaction.
+ */
+export function compactionHooks(threadId: string, callbacks: CompactionCallbacks | undefined): Hooks | null {
+  if (!callbacks) return null;
+  const guarded = async <T>(name: string, run: () => T | Promise<T>): Promise<T | null> => {
+    try {
+      return await run();
+    } catch (err) {
+      console.warn(`[muxi-agent:claude] compaction callback "${name}" failed: ${(err as Error).message}`);
+      return null;
+    }
+  };
+  const handle = async (input: HookInput) => {
+    if (input.agent_id != null) return { continue: true };
+    if (input.hook_event_name === "PreCompact" && callbacks.before) {
+      const { trigger, custom_instructions } = input;
+      await guarded("before", () => callbacks.before?.({ threadId, trigger, instructions: custom_instructions || null }));
+    }
+    if (input.hook_event_name === "PostCompact" && callbacks.after) {
+      const { trigger, compact_summary } = input;
+      await guarded("after", () => callbacks.after?.({ threadId, trigger, summary: compact_summary }));
+    }
+    if (input.hook_event_name === "SessionStart" && input.source === "compact" && callbacks.contextAfter) {
+      const additionalContext = await guarded("contextAfter", () => callbacks.contextAfter?.({ threadId }));
+      if (additionalContext) return { hookSpecificOutput: { hookEventName: "SessionStart" as const, additionalContext } };
+    }
+    return { continue: true };
+  };
+  return {
+    ...(callbacks.before ? { PreCompact: [{ hooks: [handle] }] } : {}),
+    ...(callbacks.after ? { PostCompact: [{ hooks: [handle] }] } : {}),
+    ...(callbacks.contextAfter ? { SessionStart: [{ hooks: [handle] }] } : {}),
+  };
 }

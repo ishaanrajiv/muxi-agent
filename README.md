@@ -188,6 +188,28 @@ or fork), `systemPrompt` (use `composeSystemPrompt(base, developer)`), `effort`,
 `autoCompactWindow`. Codex keeps its own
 rollout under its `CODEX_HOME`. Claude resumes its session transcript.
 
+### Compaction callbacks
+
+A Claude provider can be given the host's part in its threads' compactions, the CLI's own and
+any the host asks for:
+
+```ts
+new ClaudeAgentProvider({
+  compaction: {
+    before: async ({ threadId, trigger, instructions }) => { /* save what must survive */ },
+    after: ({ threadId, trigger, summary }) => { /* the summary that replaced the conversation */ },
+    contextAfter: ({ threadId }) => "Re-read notes.md before you carry on.",
+  },
+});
+```
+
+`before` runs ahead of the compaction and `after` once it is done, with `trigger` `auto` or
+`manual`. `contextAfter` returns text the model sees as the compacted conversation resumes, beside
+the summary, or null for none; it is asked before `after` is called. Each is awaited, so the CLI
+waits on it. One that throws is logged and the compaction carries on. A subagent's own compaction
+calls none of them. Codex has no hook around its compaction: a host reads its
+`context.compaction` events instead.
+
 ## Events
 
 `sendTurn` yields `TurnStreamEvent`s, a union discriminated on `type`:
@@ -402,6 +424,7 @@ interface WorkspaceSettings {
 | `subagent` | none | the subagent role (`SubagentRole`) |
 | `streamedInputTools` | none | tool names whose input streams as `tool.input.delta` |
 | `guard` | none | the host's hard refusals for every tool call (`ToolGuard`, above) |
+| `compaction` | none | callbacks around every thread's compactions (`CompactionCallbacks`, below) |
 | `autoCompactWindow` | the model's whole window | the context window, in tokens (100,000 to 1,000,000), a chat session is compacted within. The CLI compacts a little short of it (about 33k tokens on CLI 0.3.x), so `133_000` compacts near 100k. It wins over `CLAUDE_CODE_AUTO_COMPACT_WINDOW` in the host's env |
 | `queryFn` | SDK `query` | a test seam |
 
