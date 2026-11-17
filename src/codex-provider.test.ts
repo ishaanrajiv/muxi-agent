@@ -32,6 +32,10 @@ function resultFor(method) {
     return { thread: { id: "t2", modelProvider: "openai" }, model: "gpt-5.6-sol" };
   }
   if (method === "turn/start") return { turn: { id: "turn1" } };
+  // FAKE_ROLLOUT_PATH is where the thread's rollout would be, written or not.
+  if (method === "thread/read" && process.env.FAKE_ROLLOUT_PATH) {
+    return { thread: { id: "t1", path: process.env.FAKE_ROLLOUT_PATH } };
+  }
   if (method === "model/list") {
     return JSON.parse(process.env.FAKE_MODELS ?? '{"data":[],"nextCursor":null}');
   }
@@ -194,6 +198,47 @@ test("compactThread asks for a compaction and streams it as a turn", async () =>
     await provider.stop();
   }
 });
+
+for (const written of [false, true]) {
+  test(`workspace mode on a thread with ${written ? "a" : "no"} rollout ${written ? "reloads it as it is" : "writes one before the reload"}`, async () => {
+    const dir = mkdtempSync(join(tmpdir(), "muxi-agent-codex-rollout-"));
+    const log = join(dir, "methods");
+    const rollout = join(dir, "rollout.jsonl");
+    if (written) writeFileSync(rollout, "");
+    const provider = new CodexAgentProvider({
+      ...testCodexHome(),
+      codexBin: FAKE_SERVER,
+      env: { FAKE_REQUEST_LOG: log, FAKE_ROLLOUT_PATH: rollout },
+    });
+    try {
+      const thread = await provider.startThread({ cwd: process.cwd() });
+      await provider.configureWorkspace(thread.id, {
+        root: "/wt",
+        protectedPaths: [],
+        developerInstructions: "dev",
+        systemPrompt: "",
+        instructions: "workspace",
+        introduce: true,
+        refusal: () => null,
+      });
+    } finally {
+      await provider.stop();
+    }
+    const requests = readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    const methods = requests.map((r) => r.method).filter((m) => m.startsWith("thread/"));
+    assert.deepEqual(
+      methods,
+      written
+        ? ["thread/start", "thread/read", "thread/unsubscribe", "thread/resume"]
+        : ["thread/start", "thread/read", "thread/inject_items", "thread/unsubscribe", "thread/resume"],
+    );
+    if (!written) {
+      const item = requests.find((r) => r.method === "thread/inject_items").params.items[0];
+      assert.equal(item.role, "developer");
+      assert.match(item.content[0].text, /\/wt/);
+    }
+  });
+}
 
 test("thread model comes from the response model, not modelProvider", async () => {
   const provider = new CodexAgentProvider({
@@ -1497,7 +1542,7 @@ test("a workspace thread reloads with the workspace overrides, its next turn ope
     }
     const requests = requestsIn(log);
     const methods = requests.map((r) => r.method).filter((m) => m && m.startsWith("thread/") || m === "turn/start");
-    assert.deepEqual(methods, ["thread/start", "turn/start", "thread/unsubscribe", "thread/resume", "turn/start", "turn/start"]);
+    assert.deepEqual(methods, ["thread/start", "turn/start", "thread/read", "thread/unsubscribe", "thread/resume", "turn/start", "turn/start"]);
     const edits = requests.find((r) => r.method === "config/batchWrite")?.params?.edits as
       | Array<{ keyPath: string; value: unknown }>
       | undefined;
