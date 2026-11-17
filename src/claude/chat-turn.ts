@@ -58,6 +58,8 @@ export interface ThreadState extends PlanState {
   subagents?: boolean;
   /** The thread may ask the person questions (AskUserQuestion). */
   askUser?: boolean;
+  /** The thread's own auto-compact window, in tokens; the provider's when absent. */
+  autoCompactWindow?: number;
   /** Set once the thread is in workspace mode (see {@link WorkspaceState}). */
   workspace?: WorkspaceState;
   /** The model's context window, from the last turn's `result`. Only a result
@@ -94,7 +96,8 @@ export interface ChatTurnSetup {
   /** The turn's permission mode (TurnInput.permissionMode); "default" when absent. */
   permissionMode?: "default" | "auto";
   /** The context window the CLI compacts the session within, in tokens (the
-   *  provider's `autoCompactWindow`); the CLI's own default when absent. */
+   *  thread's `autoCompactWindow`, else the provider's); the CLI's own default
+   *  when absent. */
   autoCompactWindow?: number;
 }
 

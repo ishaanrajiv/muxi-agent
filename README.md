@@ -111,6 +111,7 @@ interface StartThreadInput {
   webSearch?: boolean;                // Claude: WebSearch + WebFetch. Codex: live web search.
   subagents?: boolean;                // needs the provider's `subagent` role option
   askUser?: boolean;                  // Claude: AskUserQuestion (questions as approvals, below)
+  autoCompactWindow?: number;         // Claude: this thread's own compaction window, in tokens
   approvalMode?: "ask" | "auto" | "full"; // recorded for the host; providers don't act on it
 }
 ```
@@ -122,6 +123,10 @@ interface StartThreadInput {
 - **`webSearch`**, **`subagents`** and **`askUser`** are fixed per thread. To change them, call
   `resumeThread(id, { webSearch, subagents, askUser })`; Codex then reloads the thread with
   the new config.
+- **`autoCompactWindow`** gives one Claude thread its own compaction window, in
+  place of the provider's option of the same name (same range, same meaning; see
+  the provider options). `resumeThread(id, { autoCompactWindow })` changes it,
+  from the thread's next turn. Codex ignores it and compacts on its own.
 - **Subagents** need a role on the provider (`subagent: { role, description,
   instructions, refusedTools? }`). Claude registers it as an `Agent` subagent type,
   and Codex as an agent role in its home. Each turn allows at most 3 live and 6 total.
@@ -160,7 +165,8 @@ the schema. Claude uses the SDK's `outputFormat`; Codex uses `outputSchema` on
 A host that restarts calls `resumeThread(threadId, state)` with what it saved:
 `ResumeThreadState` holds `providerSessionId` (Claude's session after a rollback
 or fork), `systemPrompt` (use `composeSystemPrompt(base, developer)`), `effort`,
-`cwd`, `model`, `mcpServers`, `webSearch`, `subagents` and `askUser`. Codex keeps its own
+`cwd`, `model`, `mcpServers`, `webSearch`, `subagents`, `askUser` and
+`autoCompactWindow`. Codex keeps its own
 rollout under its `CODEX_HOME`. Claude resumes its session transcript.
 
 ## Events

@@ -103,6 +103,10 @@ export const StartThreadInput = z.object({
    *  `userInput` approval (read it with `questionsOf`) and the answers go back
    *  on accept (`answersContent`). Codex asks through its own request either way. */
   askUser: z.boolean().optional(),
+  /** Claude only: the context window, in tokens (100,000 to 1,000,000), this
+   *  thread's session is compacted within, in place of the provider's
+   *  `autoCompactWindow`. Anything else throws. Codex compacts on its own. */
+  autoCompactWindow: z.number().optional(),
   approvalMode: ApprovalMode.optional(),
 });
 export type StartThreadInput = z.infer<typeof StartThreadInput>;
