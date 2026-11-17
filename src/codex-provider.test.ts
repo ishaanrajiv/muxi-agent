@@ -240,6 +240,51 @@ for (const written of [false, true]) {
   });
 }
 
+test("a workspace profile hides the provider's own Codex home", async () => {
+  const log = join(mkdtempSync(join(tmpdir(), "muxi-agent-codex-home-deny-")), "requests");
+  const home = testCodexHome();
+  const provider = new CodexAgentProvider({ ...home, codexBin: FAKE_SERVER, env: { FAKE_REQUEST_LOG: log } });
+  try {
+    const thread = await provider.startThread({ cwd: process.cwd() });
+    await provider.configureWorkspace(thread.id, {
+      root: "/wt",
+      protectedPaths: [],
+      developerInstructions: "dev",
+      systemPrompt: "",
+      instructions: "workspace",
+      introduce: true,
+      refusal: () => null,
+    });
+  } finally {
+    await provider.stop();
+  }
+  const requests = readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const edits = requests.find((r) => r.method === "config/batchWrite").params.edits as Array<{ keyPath: string; value: { filesystem: Record<string, string> } }>;
+  const profile = edits.find((e) => e.keyPath.startsWith("permissions."));
+  assert.equal(profile?.value.filesystem[home.codexHome], "deny");
+});
+
+test("workspace mode is refused when the workspace shell could write Codex's executable", async () => {
+  const provider = new CodexAgentProvider({ ...testCodexHome(), codexBin: FAKE_SERVER });
+  try {
+    const thread = await provider.startThread({ cwd: process.cwd() });
+    await assert.rejects(
+      provider.configureWorkspace(thread.id, {
+        root: join(FAKE_SERVER, ".."),
+        protectedPaths: [],
+        developerInstructions: "dev",
+        systemPrompt: "",
+        instructions: "workspace",
+        introduce: true,
+        refusal: () => null,
+      }),
+      /workspace shell can write/,
+    );
+  } finally {
+    await provider.stop();
+  }
+});
+
 test("thread model comes from the response model, not modelProvider", async () => {
   const provider = new CodexAgentProvider({
     ...testCodexHome(), codexBin: FAKE_SERVER });

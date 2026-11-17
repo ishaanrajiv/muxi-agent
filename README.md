@@ -388,8 +388,12 @@ interface WorkspaceSettings {
   - A Codex thread can be switched before its first turn. Codex has saved nothing for such a
     thread yet, so the provider first appends one developer note naming the folder, which
     costs no model call.
-  - Known Codex gap: a `codex` binary installed under `~/.codex` can't re-run itself inside
-    the workspace sandbox, which hides `~/.codex`.
+  - Codex runs each shell command by re-running its own executable inside the sandbox, which
+    hides `~/.codex`. An install that lives there (the standalone installer's default) is
+    mirrored with hard links into `codexBinStageDir` and run from the mirror. An executable
+    the sandbox still hides, or one the workspace shell could write, makes
+    `configureWorkspace` throw.
+  - The provider's own `codexHome` is hidden from the shell, like `~/.codex`.
 - **The sandbox is required.** Claude's Bash runs in the SDK sandbox with no
   unsandboxed fallback (with `shell: false` there is no Bash, and no sandbox). Codex gets a per-thread permission profile, or the
   `workspaceWrite` sandbox on builds without profiles.
@@ -437,6 +441,7 @@ interface WorkspaceSettings {
 | `codexHome` | required | the dedicated `CODEX_HOME` |
 | `userCodexHome` | `~/.codex` | where the login is linked from |
 | `codexBin` | `codex` on PATH | the binary |
+| `codexBinStageDir` | `$XDG_CACHE_HOME/muxi-agent/codex-bin`, or `~/.cache/muxi-agent/codex-bin` | where an install the workspace sandbox hides is mirrored (see Workspace mode). A workspace shell must not be able to write here |
 | `env` | | extra env for every codex process |
 | `subagent` | none | the subagent role |
 | `turnTimeoutMs` | 30 min | per-turn timeout |
