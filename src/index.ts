@@ -17,6 +17,7 @@ export type {
   WorkspaceSettings,
   ToolGuard,
   ToolGuardCall,
+  CompactionCallbacks,
 } from "./provider.ts";
 export { COMPACT_TRIGGER, composeSystemPrompt, InvalidRollbackError } from "./provider.ts";
 export { PendingApprovalNotFoundError } from "./shared.ts";

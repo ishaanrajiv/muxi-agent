@@ -77,6 +77,7 @@ import type {
   AgentProvider,
   ApprovalRequestId,
   CompactThreadOptions,
+  CompactionCallbacks,
   HistoryCut,
   ResumeThreadState,
   RollbackResult,
@@ -101,7 +102,7 @@ import {
   type ApprovalBridge,
   type PendingApproval,
 } from "./claude/permissions.ts";
-import { guardHooks, mergeHooks } from "./claude/hooks.ts";
+import { compactionHooks, guardHooks, mergeHooks } from "./claude/hooks.ts";
 import { PLAN_RESYNC_HINT, planHooks } from "./claude/plan.ts";
 import {
   checkAutoCompactWindow,
@@ -156,6 +157,8 @@ export interface ClaudeAgentProviderOptions {
   streamedInputTools?: Iterable<string>;
   /** The host's hard refusals for every tool call ({@link ToolGuard}). */
   guard?: ToolGuard;
+  /** The host's part in every thread's compactions ({@link CompactionCallbacks}). */
+  compaction?: CompactionCallbacks;
   /** The context window, in tokens, the CLI compacts a chat session within (its
    *  `autoCompactWindow` setting): it compacts a little short of it, about 33k
    *  tokens on CLI 0.3.x, so 133_000 compacts near 100k. 100_000 to 1_000_000;
@@ -174,6 +177,7 @@ export class ClaudeAgentProvider implements AgentProvider {
   private readonly subagentRole: SubagentRole | undefined;
   private readonly streamedInputTools: ReadonlySet<string>;
   private readonly guard: ToolGuard | undefined;
+  private readonly compaction: CompactionCallbacks | undefined;
   private readonly autoCompactWindow: number | undefined;
   /** An explicit `claude` path from the caller, if any. Everything else is
    *  resolved per-call by `resolveClaudeExecutable`. */
@@ -214,6 +218,7 @@ export class ClaudeAgentProvider implements AgentProvider {
     this.subagentRole = opts.subagent ? checkSubagentRole(opts.subagent) : undefined;
     this.streamedInputTools = new Set(opts.streamedInputTools ?? []);
     this.guard = opts.guard;
+    this.compaction = opts.compaction;
     this.autoCompactWindow = checkAutoCompactWindow(opts.autoCompactWindow);
     this.configuredPath = opts.pathToClaudeCodeExecutable;
     this.queryFn = opts.queryFn;
@@ -706,6 +711,7 @@ export class ClaudeAgentProvider implements AgentProvider {
       // The guard first; each event's hooks from every part, concatenated (a deny wins).
       hooks: mergeHooks(
         guardHooks(threadId, this.guard, denials),
+        compactionHooks(threadId, this.compaction),
         planHooks(threadId, () => this.ensureThreadState(threadId), () => settled, push),
         state.workspace ? workspaceHooks(() => this.threads.get(threadId)?.workspace) : null,
         subagents ? subagentHooks(() => subagents?.tracker ?? null) : null,

@@ -149,6 +149,24 @@ export interface ToolGuardCall {
  */
 export type ToolGuard = (call: ToolGuardCall) => string | null;
 
+/**
+ * A host's part in a thread's compactions, the backend's own and the ones the
+ * host asks for alike. Each callback is awaited, so the backend waits on it;
+ * one that throws is logged and the compaction carries on. Only the thread's own
+ * conversation calls them, never a subagent's. Claude only: Codex has no hook
+ * around its compaction, and reports one through `context.compaction` events.
+ */
+export interface CompactionCallbacks {
+  /** The conversation is about to be compacted. The last moment to save, outside
+   *  the conversation, whatever must survive it. */
+  before?(compaction: { threadId: string; trigger: "auto" | "manual"; instructions: string | null }): void | Promise<void>;
+  /** The conversation was compacted; `summary` is what replaced it. */
+  after?(compaction: { threadId: string; trigger: "auto" | "manual"; summary: string }): void | Promise<void>;
+  /** Text to put in front of the model once the compacted conversation resumes,
+   *  beside the summary: what it should re-read, say. Null adds nothing. */
+  contextAfter?(compaction: { threadId: string }): string | null | Promise<string | null>;
+}
+
 export interface WorkspaceSettings {
   /** The working folder: the thread's new cwd and the only place it writes
    *  (besides `cacheDir`). Its `.git` stays read-only and its env files
